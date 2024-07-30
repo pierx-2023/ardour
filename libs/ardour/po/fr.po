@@ -483,7 +483,7 @@ msgstr "Élévation"
 
 #: automation_control.cc:326
 msgid "record %1 automation"
-msgstr "enregistrement l'auromation %1"
+msgstr "enregistrement de l'automation %1"
 
 #: automation_list.cc:452
 msgid "automation list: cannot load coordinates from XML, all points ignored"
@@ -526,11 +526,11 @@ msgstr "Échec de l'écriture du maître sur le dstream %1"
 
 #: control_protocol_manager.cc:133
 msgid "Control protocol %1 was already active."
-msgstr "Le protocole de contrôle %1 été déjà actif."
+msgstr "Le protocole de contrôle %1 était déjà actif."
 
 #: control_protocol_manager.cc:161
 msgid "Control protocol support for %1 failed to activate"
-msgstr "Le support de protocole de contrôle pour %1 a échoué à s'activer"
+msgstr "L'activation du support de protocole de contrôle pour %1 a échoué"
 
 #: control_protocol_manager.cc:224
 msgid "control protocol name \"%1\" has no descriptor"
@@ -571,7 +571,7 @@ msgstr "Le protocole de contrôle \"%1\" n'a pas de descripteur"
 
 #: convolver.cc:232
 msgid "Convolver: IR \"%1\" no usable audio-channels sound."
-msgstr "Convolver : IR \"%1\" aucun son de canal audio utilisable."
+msgstr "Convolver : IR \"%1\" aucun son utilisables dans les canaux audio."
 
 #: convolver.cc:237
 msgid "Convolver: IR \"%1\" file too long."
@@ -653,7 +653,7 @@ msgstr "MidiDiskstream %1 : écriture sur le disque impossible"
 
 #: disk_writer.cc:1014 disk_writer.cc:1040
 msgid "%1:%2 new capture file not initialized correctly"
-msgstr "%1 : %2 nouveau fichier de capture mal initialisé"
+msgstr "%1 : %2 mauvaise initialisation du nouveau fichier de prise"
 
 #: disk_writer.cc:1026
 msgid "AudioDiskstream: channel %1 out of range"
@@ -662,7 +662,7 @@ msgstr "AudioDiskstream : canal %1 hors intervalle"
 #: disk_writer.cc:1080
 msgid "AudioDiskstream \"%1\": cannot flush captured data to disk!"
 msgstr ""
-"AudioDiskstream \"%1\" : transfert de la capture sur le disque impossible !"
+"AudioDiskstream \"%1\" : transfert de la prise sur le disque impossible !"
 
 #: export_channel.cc:158
 msgid "Could not get port for export channel \"%1\", dropping the channel"
@@ -670,7 +670,7 @@ msgstr "Pas de port possible pour l'export du canal \"%1\", canal omis"
 
 #: export_failed.cc:32
 msgid "Export failed: %1"
-msgstr "Échec d'export : %1"
+msgstr "L'export à échoué : %1"
 
 #: export_filename.cc:131
 msgid "Existing export folder for this session (%1) does not exist - ignored"
@@ -734,7 +734,7 @@ msgstr "normaliser la sonie"
 
 #: export_format_specification.cc:600
 msgid "normalize peak"
-msgstr "normaliser les pics"
+msgstr "normaliser les crêtes"
 
 #: export_format_specification.cc:605
 msgid "trim"
@@ -778,15 +778,15 @@ msgstr "32-bit"
 
 #: export_formats.cc:175
 msgid "float"
-msgstr "Virgule flottante"
+msgstr "flottante"
 
 #: export_formats.cc:177
 msgid "double"
-msgstr "Double"
+msgstr "double"
 
 #: export_formats.cc:179
 msgid "8-bit unsigned"
-msgstr "8-bit unsigned"
+msgstr "8-bit non-signé"
 
 #: export_formats.cc:181
 msgid "Vorbis sample format"
@@ -825,7 +825,7 @@ msgstr "Création du dossier de formats d'export %1 impossible : %2"
 
 #: export_profile_manager.cc:276
 msgid "Unable to remove export preset %1: %2"
-msgstr "Impossible d'enlever le préset d'export %1 : %2"
+msgstr "Impossible de supprimer le pré-réglage d'export %1 : %2"
 
 #: export_profile_manager.cc:365
 msgid "Selection"
@@ -904,7 +904,7 @@ msgstr "Impossible de renommer la source du fichier de %1 en %2 (%3)"
 
 #: file_source.cc:250 file_source.cc:373
 msgid "FileSource: search path not set"
-msgstr "FileSource : le chemin de recherche n'est pas paramétré"
+msgstr "FileSource : le chemin de recherche n'est pas défini"
 
 #: file_source.cc:433
 msgid ""
@@ -916,11 +916,11 @@ msgstr ""
 
 #: file_source.cc:440
 msgid "Filesource: cannot find required file (%1)"
-msgstr "Filesource : impossible de trouver le fichier nécessaire (%1)"
+msgstr "Filesource : impossible de trouver le fichier demandé (%1)"
 
 #: file_source.cc:485
 msgid "Filesource: cannot find required file (%1): %2"
-msgstr "Filesource : impossible de trouver le fichier nécessaire (%1) : (%2)"
+msgstr "Filesource : impossible de trouver le fichier demandé (%1) : (%2)"
 
 #: file_source.cc:493
 msgid "Filesource: cannot check for existing file (%1): %2"
@@ -1041,7 +1041,7 @@ msgstr "Erreur d'extraction du fichier-Archive"
 
 #: find_session.cc:265
 msgid "No Error"
-msgstr "Sans Erreur"
+msgstr "Aucune Erreur"
 
 #: find_session.cc:267
 msgid "File extension is not %1"
@@ -1145,7 +1145,7 @@ msgstr "Impossible de trouver un nouveau nom pour le fichier importé %1"
 #: import.cc:183
 msgid "Could not find a source for %1 even though we are updating this file!"
 msgstr ""
-"N'a pas pu trouver une source pour %1 même si nous mettons à jour ce "
+"Impossible de trouver une source pour %1 même si nous mettons à jour ce "
 "fichier !"
 
 #: import.cc:209
@@ -1186,7 +1186,7 @@ msgstr "Chargement du fichier MIDI %1"
 
 #: import.cc:649
 msgid "Failed to remove some files after failed/cancelled import operation"
-msgstr "Echec de suppression de fichier(s) après l'échec/annulation d'import"
+msgstr "Impossible de supprimer certains fichiers après l'échec/annulation de l'import"
 
 #: import_pt.cc:248
 msgid "PT Import : MISSING `%1`, inserting ref to missing source"
@@ -1266,23 +1266,23 @@ msgstr "Groupe %1 indisponible - \"%2\" utilisé à la place"
 
 #: io.cc:791
 msgid "No %1 bundles available as a replacement"
-msgstr "Aucun bundle %1 disponible en tant que remplacement"
+msgstr "Aucun groupe %1 disponible en tant que remplacement"
 
 #: io.cc:895
 msgid "%1: cannot create I/O ports"
-msgstr "%1 : création de ports E/S impossible"
+msgstr "%1 : création des ports E/S impossible"
 
 #: io.cc:1023 io.cc:1124
 msgid "IO: badly formed string in XML node for inputs \"%1\""
-msgstr "IO : chaîne mal formée dans le nœud XML pour les entrées \"%1\""
+msgstr "IO : chaîne mal formée dans le noeud XML pour les entrées \"%1\""
 
 #: io.cc:1028 io.cc:1129
 msgid "bad input string in XML node \"%1\""
-msgstr "mauvaise chaîne d'entrée dans le noeud XML \"%1\""
+msgstr "chaîne d'entrée incorrecte dans le noeud XML \"%1\""
 
 #: io.cc:1067
 msgid "IO: badly formed string in XML node for outputs \"%1\""
-msgstr "IO : chaîne mal formée dans le nœud XML pour les sorties \"%1\""
+msgstr "IO : chaîne mal formée dans le noeud XML pour les sorties \"%1\""
 
 #: io.cc:1072
 msgid "IO: bad output string in XML node \"%1\""
