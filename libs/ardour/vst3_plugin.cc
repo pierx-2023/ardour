@@ -820,6 +820,12 @@ VST3Plugin::set_block_size (pframes_t n_samples)
 }
 
 samplecnt_t
+VST3Plugin::plugin_tail () const
+{
+	return _plug->plugin_tail ();
+}
+
+samplecnt_t
 VST3Plugin::plugin_latency () const
 {
 	return _plug->plugin_latency ();
@@ -1019,9 +1025,10 @@ VST3Plugin::load_preset (PresetRecord r)
 		return false;
 	}
 
-	Glib::Threads::Mutex::Lock lx (_plug->process_lock ());
 
 	if (tmp[0] == "VST3-P") {
+		Glib::Threads::Mutex::Lock lx (_plug->process_lock ());
+		PBD::Unwinder<bool> uw (_plug->component_is_synced (), true);
 		int program = PBD::atoi (tmp[2]);
 		assert (!r.user);
 		if (!_plug->set_program (program, 0)) {
@@ -1038,13 +1045,13 @@ VST3Plugin::load_preset (PresetRecord r)
 		std::string const& fn = _preset_uri_map[r.uri];
 
 		if (Glib::file_test (fn, Glib::FILE_TEST_EXISTS)) {
+			Glib::Threads::Mutex::Lock lx (_plug->process_lock ());
+			PBD::Unwinder<bool> uw (_plug->component_is_synced (), true);
 			RAMStream stream (fn);
 			ok = _plug->load_state (stream);
 			DEBUG_TRACE (DEBUG::VST3Config, string_compose ("VST3Plugin::load_preset: file %1 status %2\n", fn, ok ? "OK" : "error"));
 		}
 	}
-
-	lx.release ();
 
 	if (ok) {
 		Plugin::load_preset (r);
@@ -1676,7 +1683,7 @@ VST3PI::restartComponent (int32 flags)
 
 	if (flags & Vst::kReloadComponent) {
 		Glib::Threads::Mutex::Lock pl (_process_lock, Glib::Threads::NOT_LOCK);
-		if (!AudioEngine::instance ()->in_process_thread () && !_is_loading_state && !_restart_component_is_synced) {
+		if (!AudioEngine::instance ()->in_process_thread () && !_is_loading_state && !_restart_component_is_synced && !_process_offline) {
 			pl.acquire ();
 		} else {
 			assert (0); // a plugin should not call this while processing
@@ -1694,7 +1701,7 @@ VST3PI::restartComponent (int32 flags)
 	}
 	if (flags & Vst::kParamValuesChanged) {
 		Glib::Threads::Mutex::Lock pl (_process_lock, Glib::Threads::NOT_LOCK);
-		if (!AudioEngine::instance ()->in_process_thread () && !_is_loading_state && !_restart_component_is_synced) {
+		if (!AudioEngine::instance ()->in_process_thread () && !_is_loading_state && !_restart_component_is_synced && !_process_offline) {
 			pl.acquire ();
 		}
 		update_shadow_data ();
@@ -1709,7 +1716,7 @@ VST3PI::restartComponent (int32 flags)
 		 * changes are automatically picked up.
 		 */
 		Glib::Threads::Mutex::Lock pl (_process_lock, Glib::Threads::NOT_LOCK);
-		if (!AudioEngine::instance ()->in_process_thread () && !_is_loading_state && !_restart_component_is_synced) {
+		if (!AudioEngine::instance ()->in_process_thread () && !_is_loading_state && !_restart_component_is_synced && !_process_offline) {
 			/* Some plugins (e.g BlendEQ) call this from the process,
 			 * IPlugProcessor::ProcessBuffers. In that case taking the
 			 * _process_lock would deadlock.
@@ -1951,6 +1958,15 @@ VST3PI::plugin_latency ()
 	return _plugin_latency.value ();
 }
 
+uint32_t
+VST3PI::plugin_tail ()
+{
+	if (!_plugin_tail) { // XXX this is currently never reset
+		_plugin_tail = _processor->getTailSamples ();
+	}
+	return _plugin_tail.value ();
+}
+
 void
 VST3PI::set_owner (SessionObject* o)
 {
@@ -1970,7 +1986,11 @@ VST3PI::set_owner (SessionObject* o)
 void
 VST3PI::set_non_realtime (bool yn)
 {
+	if (_process_offline == yn) {
+		return;
+	}
 	_process_offline = yn;
+	update_processor ();
 }
 
 int32
@@ -3180,11 +3200,11 @@ VST3PI::setContextInfoValue (FIDString id, int32 value)
 		std::shared_ptr<Stripable> stripable = s->session ().stripable_by_id (s->id ());
 		assert (stripable);
 		if (value == 0) {
-			s->session ().selection ().remove (stripable, std::shared_ptr<AutomationControl> ());
+			s->session ().selection ().select_stripable_and_maybe_group (stripable, SelectionRemove);
 		} else if (_add_to_selection) {
-			s->session ().selection ().add (stripable, std::shared_ptr<AutomationControl> ());
+			s->session ().selection ().select_stripable_and_maybe_group (stripable, SelectionAdd);
 		} else {
-			s->session ().selection ().set (stripable, std::shared_ptr<AutomationControl> ());
+			s->session ().selection ().select_stripable_and_maybe_group (stripable, SelectionSet);
 		}
 	} else if (0 == strcmp (id, ContextInfo::kMultiSelect)) {
 		_add_to_selection = value != 0;

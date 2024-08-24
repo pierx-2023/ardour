@@ -177,6 +177,7 @@ CONFIG_VARIABLE (float, shuttle_speed_factor, "shuttle-speed-factor", 1.0f) // u
 CONFIG_VARIABLE (float, shuttle_speed_threshold, "shuttle-speed-threshold", 5.0f) // used for MMC shuttle
 CONFIG_VARIABLE (ShuttleUnits, shuttle_units, "shuttle-units", Percentage)
 CONFIG_VARIABLE (float, shuttle_max_speed, "shuttle-max-speed", 8.0f)
+CONFIG_VARIABLE (FastWindOp, mmc_fast_wind_op, "mmc-fast-wind-op", FastWindVarispeed)
 CONFIG_VARIABLE (bool, locate_while_waiting_for_sync, "locate-while-waiting-for-sync", false)
 CONFIG_VARIABLE (bool, disable_disarm_during_roll, "disable-disarm-during-roll", false)
 CONFIG_VARIABLE (AutoReturnTarget, auto_return_target_list, "auto-return-target-list", AutoReturnTarget(LastLocate|RangeSelectionStart|Loop|RegionSelectionStart))
@@ -254,6 +255,9 @@ CONFIG_VARIABLE (bool, setup_sidechain, "setup-sidechain", false)
 CONFIG_VARIABLE (uint32_t, plugin_scan_timeout, "plugin-scan-timeout", 150) /* deci-seconds */
 CONFIG_VARIABLE (uint32_t, limit_n_automatables, "limit-n-automatables", 512)
 CONFIG_VARIABLE (uint32_t, plugin_cache_version, "plugin-cache-version", 0)
+
+CONFIG_VARIABLE (float, tail_duration_sec, "tail-duration-sec", 2.0)
+CONFIG_VARIABLE (uint32_t, max_tail_samples, "max-tail-samples", 0xffffffff) // aka kInfiniteTail
 
 /* custom user plugin paths */
 CONFIG_VARIABLE (std::string, plugin_path_vst, "plugin-path-vst", "@default@")

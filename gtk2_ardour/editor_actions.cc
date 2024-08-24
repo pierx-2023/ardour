@@ -242,7 +242,7 @@ Editor::register_actions ()
 	reg_sens (editor_actions, "playhead-to-range-start", _("Playhead to Range Start"), sigc::bind (sigc::mem_fun(*this, &Editor::cursor_to_selection_start), _playhead_cursor));
 	reg_sens (editor_actions, "playhead-to-range-end", _("Playhead to Range End"), sigc::bind (sigc::mem_fun(*this, &Editor::cursor_to_selection_end), _playhead_cursor));
 
-	reg_sens (editor_actions, "select-all-objects", _("Select All Objects"), sigc::bind (sigc::mem_fun(*this, &Editor::select_all_objects), Selection::Set));
+	reg_sens (editor_actions, "select-all-objects", _("Select All Objects"), sigc::bind (sigc::mem_fun(*this, &Editor::select_all_objects), SelectionSet));
 
 	reg_sens (editor_actions, "select-loop-range", _("Set Range to Loop Range"), sigc::mem_fun(*this, &Editor::set_selection_from_loop));
 	reg_sens (editor_actions, "select-punch-range", _("Set Range to Punch Range"), sigc::mem_fun(*this, &Editor::set_selection_from_punch));
@@ -1871,8 +1871,12 @@ Editor::register_region_actions ()
 	/* Move selected regions to their original (`natural') position */
 	register_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "naturalize-region", _("Move to Original Position"), sigc::mem_fun (*this, &Editor::naturalize_region));
 
+	/* Change `locked' status of selected regions */
+	register_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "region-lock", _("Lock"), sigc::mem_fun(*this, &Editor::region_lock));
+	register_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "region-unlock", _("Unlock"), sigc::mem_fun(*this, &Editor::region_unlock));
+
 	/* Toggle `locked' status of selected regions */
-	register_toggle_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "toggle-region-lock", _("Lock"), sigc::mem_fun(*this, &Editor::toggle_region_lock));
+	register_toggle_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "toggle-region-lock", _("Lock (toggle)"), sigc::mem_fun(*this, &Editor::toggle_region_lock));
 	register_toggle_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "toggle-region-video-lock", _("Lock to Video"), sigc::mem_fun(*this, &Editor::toggle_region_video_lock));
 
 	/* Remove sync points from selected regions */

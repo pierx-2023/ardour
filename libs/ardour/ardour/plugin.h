@@ -87,12 +87,12 @@ public:
 	virtual void set_insert_id (PBD::ID id) {}
 	virtual void set_state_dir (const std::string& d = "") {}
 
-	void set_insert (PluginInsert* pi, uint32_t num) {
-		_pi = pi;
+	void set_insert (PlugInsertBase* pib, uint32_t num) {
+		_pib = pib;
 		_num = num;
 	}
 
-	PluginInsert* plugin_insert () const { return _pi; }
+	PlugInsertBase* plugin_insert () const { return _pib; }
 	uint32_t plugin_number () const { return _num; }
 
 	virtual std::string unique_id () const                   = 0;
@@ -174,6 +174,9 @@ public:
 
 	/** the max possible latency a plugin will have */
 	virtual samplecnt_t max_latency () const { return 0; }
+
+	samplecnt_t effective_tail() const;
+	PBD::Signal0<void> TailChanged;
 
 	virtual int  set_block_size (pframes_t nframes) = 0;
 	virtual bool requires_fixed_sized_buffers () const { return false; }
@@ -423,6 +426,11 @@ protected:
 
 private:
 	virtual samplecnt_t plugin_latency () const = 0;
+	/** tail duration in samples. e.g. for reverb or delay plugins.
+	 *
+	 * The default when unknown is 2 sec */
+	virtual samplecnt_t plugin_tail () const;
+
 
 	/** Fill _presets with our presets */
 	virtual void find_presets () = 0;
@@ -443,8 +451,8 @@ private:
 	void invalidate_preset_cache (std::string const&, Plugin*, bool);
 	void resolve_midi ();
 
-	PluginInsert* _pi;
-	uint32_t      _num;
+	PlugInsertBase* _pib;
+	uint32_t        _num;
 
 	PBD::ScopedConnection _preset_connection;
 };

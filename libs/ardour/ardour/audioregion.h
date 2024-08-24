@@ -50,6 +50,7 @@ namespace Properties {
 	LIBARDOUR_API extern PBD::PropertyDescriptor<bool> default_fade_out;
 	LIBARDOUR_API extern PBD::PropertyDescriptor<bool> fade_in_active;
 	LIBARDOUR_API extern PBD::PropertyDescriptor<bool> fade_out_active;
+	LIBARDOUR_API extern PBD::PropertyDescriptor<bool> fade_before_fx;
 	LIBARDOUR_API extern PBD::PropertyDescriptor<float> scale_amplitude;
 	LIBARDOUR_API extern PBD::PropertyDescriptor<std::shared_ptr<AutomationList> > fade_in;
 	LIBARDOUR_API extern PBD::PropertyDescriptor<std::shared_ptr<AutomationList> > inverse_fade_in;
@@ -100,6 +101,7 @@ class LIBARDOUR_API AudioRegion : public Region, public AudioReadable
 	bool envelope_active () const { return _envelope_active; }
 	bool fade_in_active ()  const { return _fade_in_active; }
 	bool fade_out_active () const { return _fade_out_active; }
+	bool fade_before_fx () const { return _fade_before_fx; }
 
 	std::shared_ptr<AutomationList> fade_in()  { return _fade_in.val (); }
 	std::shared_ptr<AutomationList> inverse_fade_in()  { return _inverse_fade_in.val (); }
@@ -162,10 +164,14 @@ class LIBARDOUR_API AudioRegion : public Region, public AudioReadable
 	void set_envelope_active (bool yn);
 	void set_default_envelope ();
 
+	void set_fade_before_fx (bool yn);
+
 	int separate_by_channel (std::vector<std::shared_ptr<Region> >&) const;
 
 	bool remove_plugin (std::shared_ptr<RegionFxPlugin>);
 	void reorder_plugins (RegionFxList const&);
+
+	timecnt_t tail () const;
 
 	/* automation */
 
@@ -220,6 +226,7 @@ class LIBARDOUR_API AudioRegion : public Region, public AudioReadable
 	PBD::Property<bool>     _default_fade_out;
 	PBD::Property<bool>     _fade_in_active;
 	PBD::Property<bool>     _fade_out_active;
+	PBD::Property<bool>     _fade_before_fx;
 	/** linear gain to apply to the whole region */
 	PBD::Property<gain_t>   _scale_amplitude;
 
@@ -259,6 +266,7 @@ class LIBARDOUR_API AudioRegion : public Region, public AudioReadable
 
 	void apply_region_fx (BufferSet&, samplepos_t, samplepos_t, samplecnt_t);
 	void fx_latency_changed (bool no_emit);
+	void fx_tail_changed (bool no_emit);
 	void copy_plugin_state (std::shared_ptr<const AudioRegion>);
 
 	mutable samplepos_t _fx_pos;
@@ -269,6 +277,7 @@ class LIBARDOUR_API AudioRegion : public Region, public AudioReadable
 	mutable BufferSet            _readcache;
 	mutable samplepos_t          _cache_start;
 	mutable samplepos_t          _cache_end;
+	mutable samplecnt_t          _cache_tail;
 	mutable std::atomic<bool>    _invalidated;
 
   protected:

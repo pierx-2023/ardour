@@ -67,16 +67,14 @@ public:
 	{
 		return _plugins.size ();
 	}
-	PluginType type () const
-	{
-		return plugin ()->get_info ()->type;
-	}
+	PluginType type () const;
+
 	std::shared_ptr<Plugin> plugin (uint32_t num = 0) const
 	{
 		if (num < _plugins.size ()) {
 			return _plugins[num];
 		} else {
-			return _plugins[0];
+			return std::shared_ptr<Plugin>();
 		}
 	}
 
@@ -91,6 +89,8 @@ public:
 	bool reset_parameters_to_default ();
 	bool can_reset_all_parameters ();
 
+	void maybe_emit_changed_signals () const;
+
 	std::string describe_parameter (Evoral::Parameter param);
 
 	bool provides_stats () const
@@ -102,6 +102,22 @@ public:
 		return false;
 	}
 	void clear_stats () {}
+
+	ChanMapping input_map (uint32_t num) const {
+		if (num < _in_map.size()) {
+			return _in_map.find (num)->second;
+		} else {
+			return ChanMapping ();
+		}
+	}
+
+	ChanMapping output_map (uint32_t num) const {
+		if (num < _out_map.size()) {
+			return _out_map.find (num)->second;
+		} else {
+			return ChanMapping ();
+		}
+	}
 
 	/* Stateful */
 	XMLNode& get_state (void) const;
@@ -136,6 +152,10 @@ public:
 	{
 		return _required_buffers;
 	}
+
+	/* wrapped Plugin API */
+	PBD::Signal0<void> TailChanged;
+	samplecnt_t effective_tail () const;
 
 private:
 	/* disallow copy construction */
@@ -173,11 +193,17 @@ private:
 	bool _configured;
 	bool _no_inplace;
 
+	mutable samplepos_t _last_emit;
+
 	typedef std::map<uint32_t, std::shared_ptr<ReadOnlyControl>> CtrlOutMap;
 	CtrlOutMap                                                   _control_outputs;
 
 	Gtkmm2ext::WindowProxy* _window_proxy;
 	std::atomic<int>        _flush;
+
+	XMLNode* _state;
+
+	mutable Glib::Threads::Mutex _process_lock;
 };
 
 } // namespace ARDOUR

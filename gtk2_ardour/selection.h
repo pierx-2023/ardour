@@ -34,6 +34,8 @@
 
 #include "pbd/signals.h"
 
+#include "ardour/types.h"
+
 #include "time_selection.h"
 #include "region_selection.h"
 #include "track_selection.h"
@@ -76,13 +78,6 @@ public:
 	enum SelectionType {
 		Object = 0x1,
 		Range = 0x2
-	};
-
-	enum Operation {
-		Set,
-		Add,
-		Toggle,
-		Extend
 	};
 
 	TrackSelection       tracks;
@@ -253,8 +248,6 @@ private:
 	PublicEditor const * editor;
 	uint32_t next_time_id;
 	bool     manage_libardour_selection;
-
-	TrackViewList add_grouped_tracks (TrackViewList const & t);
 };
 
 bool operator==(const Selection& a, const Selection& b);

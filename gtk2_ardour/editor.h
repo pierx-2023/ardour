@@ -288,7 +288,7 @@ public:
 
 	void get_regionviews_at_or_after (Temporal::timepos_t const &, RegionSelection&);
 
-	void set_selection (std::list<Selectable*>, Selection::Operation);
+	void set_selection (std::list<Selectable*>, ARDOUR::SelectionOperation);
 	void set_selected_midi_region_view (MidiRegionView&);
 
 	std::shared_ptr<ARDOUR::Route> current_mixer_stripable () const;
@@ -300,14 +300,14 @@ public:
 	void play_with_preroll ();
 	void rec_with_preroll ();
 	void rec_with_count_in ();
-	void select_all_in_track (Selection::Operation op);
-	void select_all_objects (Selection::Operation op);
+	void select_all_in_track (ARDOUR::SelectionOperation op);
+	void select_all_objects (ARDOUR::SelectionOperation op);
 	void invert_selection_in_track ();
 	void invert_selection ();
 	void deselect_all ();
 	long select_range (Temporal::timepos_t const & , Temporal::timepos_t const &);
 
-	void set_selected_regionview_from_region_list (std::shared_ptr<ARDOUR::Region> region, Selection::Operation op = Selection::Set);
+	void set_selected_regionview_from_region_list (std::shared_ptr<ARDOUR::Region> region, ARDOUR::SelectionOperation op = ARDOUR::SelectionSet);
 
 	void remove_tracks ();
 
@@ -844,15 +844,15 @@ private:
 
 	void catch_vanishing_regionview (RegionView*);
 
-	void set_selected_track (TimeAxisView&, Selection::Operation op = Selection::Set, bool no_remove=false);
+	void set_selected_track (TimeAxisView&, ARDOUR::SelectionOperation op = ARDOUR::SelectionSet, bool no_remove=false);
 	void select_all_visible_lanes ();
 	void select_all_tracks ();
-	bool select_all_internal_edit (Selection::Operation);
+	bool select_all_internal_edit (ARDOUR::SelectionOperation);
 
-	bool set_selected_control_point_from_click (bool press, Selection::Operation op = Selection::Set);
-	void set_selected_track_from_click (bool press, Selection::Operation op = Selection::Set, bool no_remove=false);
-	void set_selected_track_as_side_effect (Selection::Operation op, PBD::Controllable::GroupControlDisposition gcd = PBD::Controllable::UseGroup);
-	bool set_selected_regionview_from_click (bool press, Selection::Operation op = Selection::Set);
+	bool set_selected_control_point_from_click (bool press, ARDOUR::SelectionOperation op = ARDOUR::SelectionSet);
+	void set_selected_track_from_click (bool press, ARDOUR::SelectionOperation op = ARDOUR::SelectionSet, bool no_remove=false);
+	void set_selected_track_as_side_effect (ARDOUR::SelectionOperation op, PBD::Controllable::GroupControlDisposition gcd = PBD::Controllable::UseGroup);
+	bool set_selected_regionview_from_click (bool press, ARDOUR::SelectionOperation op = ARDOUR::SelectionSet);
 
 	bool set_selected_regionview_from_map_event (GdkEventAny*, StreamView*, std::weak_ptr<ARDOUR::Region>);
 	void collect_new_region_view (RegionView*);
@@ -1152,7 +1152,7 @@ private:
 	std::shared_ptr<ARDOUR::Region> find_next_region (Temporal::timepos_t const &, ARDOUR::RegionPoint, int32_t dir, TrackViewList&, TimeAxisView** = 0);
 	Temporal::timepos_t find_next_region_boundary (Temporal::timepos_t const &, int32_t dir, const TrackViewList&);
 
-	std::vector<Temporal::timepos_t> region_boundary_cache;
+	std::set<Temporal::timepos_t> region_boundary_cache;
 	void mark_region_boundary_cache_dirty () { _region_boundary_cache_dirty = true; }
 	void build_region_boundary_cache ();
 	bool	_region_boundary_cache_dirty;
@@ -1336,6 +1336,8 @@ private:
 	/* EDITING OPERATIONS */
 
 	void reset_point_selection ();
+	void region_lock ();
+	void region_unlock ();
 	void toggle_region_lock ();
 	void toggle_opaque_region ();
 	void toggle_record_enable ();
@@ -2169,7 +2171,7 @@ private:
 
 	/* object rubberband select process */
 
-	void select_all_within (Temporal::timepos_t const &, Temporal::timepos_t const &, double, double, TrackViewList const &, Selection::Operation, bool);
+	void select_all_within (Temporal::timepos_t const &, Temporal::timepos_t const &, double, double, TrackViewList const &, ARDOUR::SelectionOperation, bool);
 
 	ArdourCanvas::Rectangle* rubberband_rect;
 
@@ -2626,6 +2628,7 @@ private:
 		bool               have_predrag_cursor;
 		int                direction;
 		bool               first_move;
+		bool               did_reorder;
 
 		TrackDrag (RouteTimeAxisView* rtav, ARDOUR::Session& s)
 			: track (rtav)
@@ -2638,6 +2641,7 @@ private:
 			, have_predrag_cursor (false)
 			, direction (0)
 			, first_move (true)
+			, did_reorder (false)
 		{}
 
 	};

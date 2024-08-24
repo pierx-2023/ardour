@@ -4387,53 +4387,54 @@ MarkerDrag::start_grab (GdkEvent* event, Gdk::Cursor* cursor)
 	show_view_preview ((is_start ? location->start () : location->end ()) + _video_offset);
 	setup_snap_delta (timepos_t (is_start ? location->start () : location->end ()));
 
-	Selection::Operation op = ArdourKeyboard::selection_type (event->button.state);
+	SelectionOperation op = ArdourKeyboard::selection_type (event->button.state);
 
 	switch (op) {
-		case Selection::Toggle:
-			/* we toggle on the button release */
-			break;
-		case Selection::Set:
-			if (!_editor->selection->selected (_marker)) {
-				_editor->selection->set (_marker);
-				_selection_changed = true;
-			}
-			break;
-		case Selection::Extend: {
-			Locations::LocationList ll;
-			list<ArdourMarker*>     to_add;
-			timepos_t               s, e;
-			_editor->selection->markers.range (s, e);
-			s = min (_marker->position (), s);
-			e = max (_marker->position (), e);
-			s = min (s, e);
-			e = max (s, e);
-			if (e < timepos_t::max (e.time_domain ())) {
-				e = e.increment ();
-			}
-			_editor->session ()->locations ()->find_all_between (s, e, ll, Location::Flags (0));
-			for (Locations::LocationList::iterator i = ll.begin (); i != ll.end (); ++i) {
-				Editor::LocationMarkers* lm = _editor->find_location_markers (*i);
-				if (lm) {
-					if (lm->start) {
-						to_add.push_back (lm->start);
-					}
-					if (lm->end) {
-						to_add.push_back (lm->end);
-					}
+	case SelectionToggle:
+		/* we toggle on the button release */
+		break;
+	case SelectionSet:
+		if (!_editor->selection->selected (_marker)) {
+			_editor->selection->set (_marker);
+			_selection_changed = true;
+		}
+		break;
+	case SelectionExtend: {
+		Locations::LocationList ll;
+		list<ArdourMarker*>     to_add;
+		timepos_t               s, e;
+		_editor->selection->markers.range (s, e);
+		s = min (_marker->position (), s);
+		e = max (_marker->position (), e);
+		s = min (s, e);
+		e = max (s, e);
+		if (e < timepos_t::max (e.time_domain ())) {
+			e = e.increment ();
+		}
+		_editor->session ()->locations ()->find_all_between (s, e, ll, Location::Flags (0));
+		for (Locations::LocationList::iterator i = ll.begin (); i != ll.end (); ++i) {
+			Editor::LocationMarkers* lm = _editor->find_location_markers (*i);
+			if (lm) {
+				if (lm->start) {
+					to_add.push_back (lm->start);
+				}
+				if (lm->end) {
+					to_add.push_back (lm->end);
 				}
 			}
-			if (!to_add.empty ()) {
-				_editor->selection->add (to_add);
-				_selection_changed = true;
-			}
-			break;
 		}
-		case Selection::Add:
-			_editor->selection->add (_marker);
+		if (!to_add.empty ()) {
+			_editor->selection->add (to_add);
 			_selection_changed = true;
-
-			break;
+		}
+		break;
+	}
+	case SelectionAdd:
+		_editor->selection->add (_marker);
+		_selection_changed = true;
+		break;
+	default:
+		break;
 	}
 
 	/* Set up copies for us to manipulate during the drag
@@ -4643,25 +4644,26 @@ MarkerDrag::finished (GdkEvent* event, bool movement_occurred)
 		   off the selection process (and locate if appropriate)
 		*/
 
-		Selection::Operation op = ArdourKeyboard::selection_type (event->button.state);
+		SelectionOperation op = ArdourKeyboard::selection_type (event->button.state);
 		switch (op) {
-			case Selection::Set:
-				if (_editor->selection->selected (_marker) && _editor->selection->markers.size () > 1) {
-					_editor->selection->set (_marker);
-					_selection_changed = true;
-				}
-				break;
-
-			case Selection::Toggle:
-				/* we toggle on the button release, click only */
-				_editor->selection->toggle (_marker);
+		case SelectionSet:
+			if (_editor->selection->selected (_marker) && _editor->selection->markers.size () > 1) {
+				_editor->selection->set (_marker);
 				_selection_changed = true;
+			}
+			break;
 
-				break;
+		case SelectionToggle:
+			/* we toggle on the button release, click only */
+			_editor->selection->toggle (_marker);
+			_selection_changed = true;
 
-			case Selection::Extend:
-			case Selection::Add:
-				break;
+			break;
+
+		case SelectionExtend:
+		case SelectionAdd:
+		case SelectionRemove:
+			break;
 		}
 
 		if (_selection_changed) {
@@ -5595,14 +5597,14 @@ SelectionDrag::motion (GdkEvent* event, bool first_move)
 			if (first_move) {
 				if (_add) {
 					/* adding to the selection */
-					_editor->set_selected_track_as_side_effect (Selection::Add, gcd);
+					_editor->set_selected_track_as_side_effect (SelectionAdd, gcd);
 					_editor->clicked_selection = _editor->selection->add (start, end);
 					_add                       = false;
 
 				} else {
 					/* new selection */
 					if (_editor->clicked_axisview && !_editor->selection->selected (_editor->clicked_axisview)) {
-						_editor->set_selected_track_as_side_effect (Selection::Set, gcd);
+						_editor->set_selected_track_as_side_effect (SelectionSet, gcd);
 					}
 
 					_editor->clicked_selection = _editor->selection->set (start, end);
@@ -6099,7 +6101,7 @@ RangeMarkerBarDrag::finished (GdkEvent* event, bool movement_occurred)
 			switch (_editor->mouse_mode) {
 				case MouseObject:
 					/* find the two markers on either side and then make the selection from it */
-					_editor->select_all_within (start, end, 0.0f, FLT_MAX, _editor->track_views, Selection::Set, false);
+					_editor->select_all_within (start, end, 0.0f, FLT_MAX, _editor->track_views, SelectionSet, false);
 					break;
 
 				case MouseRange:
@@ -6196,11 +6198,20 @@ NoteDrag::total_dx (GdkEvent* event) const
 		return timecnt_t::zero (Temporal::BeatTime);
 	}
 
-	/* dx in as samples, because we can't do any better */
-	timecnt_t const dx = timecnt_t (pixel_to_time (_drags->current_pointer_x () - grab_x ()), timepos_t ());
+	/* we need to use absolute positions here to honor the tempo-map */
+	timepos_t const t1 = pixel_to_time (_drags->current_pointer_x ());
+	timepos_t const t2 = pixel_to_time (grab_x ());
+
+	/* now calculate proper `b@b` time */
+	timecnt_t dx = t2.distance (t1);
 
 	/* primary note time in quarter notes */
 	timepos_t const n_qn = _region->region ()->source_beats_to_absolute_time (_primary->note ()->time ());
+
+	/* prevent (n_qn + dx) from becoming negative */
+	if (-dx.distance() > timecnt_t(n_qn).distance ()) {
+		dx = n_qn.distance (timepos_t (0));
+	}
 
 	/* new session relative time of the primary note (will be in beats)
 
@@ -6773,7 +6784,7 @@ EditorRubberbandSelectDrag::select_things (int button_state, timepos_t const& x1
 		return;
 	}
 
-	Selection::Operation op = ArdourKeyboard::selection_type (button_state);
+	SelectionOperation op = ArdourKeyboard::selection_type (button_state);
 
 	_editor->begin_reversible_selection_op (X_("rubberband selection"));
 

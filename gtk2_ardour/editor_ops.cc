@@ -795,11 +795,7 @@ Editor::build_region_boundary_cache ()
 	if (!_region_boundary_cache_dirty)
 		return;
 
-	timepos_t pos;
 	vector<RegionPoint> interesting_points;
-	std::shared_ptr<Region> r;
-	TrackViewList tracks;
-	bool at_end = false;
 
 	region_boundary_cache.clear ();
 
@@ -823,22 +819,19 @@ Editor::build_region_boundary_cache ()
 	}
 
 	/* if no snap selections are set, boundary cache should be left empty */
-	if ( interesting_points.empty() ) {
+	if (interesting_points.empty ()) {
 		_region_boundary_cache_dirty = false;
 		return;
 	}
 
-	TimeAxisView *ontrack = 0;
-	TrackViewList tlist;
-
-	tlist = track_views.filter_to_unique_playlists ();
+	TrackViewList tlist = track_views.filter_to_unique_playlists ();
 
 	if (maybe_first_sample) {
 		TrackViewList::const_iterator i;
 		for (i = tlist.begin(); i != tlist.end(); ++i) {
 			std::shared_ptr<Playlist> pl = (*i)->playlist();
 			if (pl && pl->count_regions_at (timepos_t())) {
-				region_boundary_cache.push_back (timepos_t());
+				region_boundary_cache.insert (timepos_t());
 				break;
 			}
 		}
@@ -846,75 +839,48 @@ Editor::build_region_boundary_cache ()
 
 	/* allow regions to snap to the video start (if any) as if it were a "region" */
 	if (ARDOUR_UI::instance()->video_timeline) {
-		ARDOUR::samplepos_t vo = ARDOUR_UI::instance()->video_timeline->get_video_start_offset();
-		if (std::find (region_boundary_cache.begin(), region_boundary_cache.end(), vo) == region_boundary_cache.end()) {
-			region_boundary_cache.push_back (timepos_t (ARDOUR_UI::instance()->video_timeline->get_video_start_offset()));
-		}
+		timepos_t vo = timepos_t (ARDOUR_UI::instance()->video_timeline->get_video_start_offset ());
+		region_boundary_cache.insert (vo);
 	}
 
 	std::pair<timepos_t, timepos_t> ext = session_gui_extents (false);
 	timepos_t session_end = ext.second;
 
-	while (pos < session_end && !at_end) {
+	for (auto const& tav : tlist) {
+		std::shared_ptr<Playlist> pl = tav->playlist ();
+		if (!pl) {
+			continue;
+		}
+		std::shared_ptr<RegionList> rl = pl->region_list ();
+		for (auto const& r : *rl) {
+			timepos_t lpos = session_end;
 
-		timepos_t rpos;
-		timepos_t lpos = session_end;
-
-		for (vector<RegionPoint>::iterator p = interesting_points.begin(); p != interesting_points.end(); ++p) {
-
-			if ((r = find_next_region (pos, *p, 1, tlist, &ontrack)) == 0) {
-				if (*p == interesting_points.back()) {
-					at_end = true;
+			for (auto const& p : interesting_points) {
+				timepos_t rpos;
+				switch (p) {
+					case Start:
+						rpos = r->position();
+						break;
+					case End:
+						rpos = r->end();
+						break;
+					case SyncPoint:
+						rpos = r->sync_position ();
+						break;
+					default:
+						break;
 				}
-				/* move to next point type */
-				continue;
-			}
+				region_boundary_cache.insert (rpos);
 
-			switch (*p) {
-			case Start:
-				rpos = r->position();
-				break;
-
-			case End:
-				rpos = r->end();
-				break;
-
-			case SyncPoint:
-				rpos = r->sync_position ();
-				break;
-
-			default:
-				break;
-			}
-
-			if (rpos < lpos) {
-				lpos = rpos;
-			}
-
-			/* prevent duplicates, but we don't use set<> because we want to be able
-			   to sort later.
-			*/
-
-			vector<timepos_t>::iterator ri;
-
-			for (ri = region_boundary_cache.begin(); ri != region_boundary_cache.end(); ++ri) {
-				if (*ri == rpos) {
-					break;
+				if (rpos < lpos) {
+					lpos = rpos;
 				}
 			}
-
-			if (ri == region_boundary_cache.end()) {
-				region_boundary_cache.push_back (rpos);
+			if (lpos >= session_end) {
+				break;
 			}
 		}
-
-		pos = lpos.increment();
 	}
-
-	/* finally sort to be sure that the order is correct */
-
-	sort (region_boundary_cache.begin(), region_boundary_cache.end());
-
 	_region_boundary_cache_dirty = false;
 }
 
@@ -4965,11 +4931,10 @@ Editor::remove_clicked_region ()
 	playlist->remove_region (region);
 
 	if (should_ripple()) {
-		do_ripple (playlist, region->position(), - region->length(), std::shared_ptr<Region>(), true);
-	} else {
-		playlist->rdiff_and_add_command (_session);
+		do_ripple (playlist, region->position(), - region->length(), std::shared_ptr<Region>(), false);
 	}
 
+	playlist->rdiff_and_add_command (_session);
 	commit_reversible_command ();
 }
 
@@ -5037,6 +5002,13 @@ Editor::remove_regions (const RegionSelection& sel, bool can_ripple, bool as_par
 
 	vector<std::shared_ptr<Playlist> > playlists;
 
+	if (!as_part_of_other_command) {
+		/* we need to start the undo coammd here, since
+		 * other playlists maybe modified as result of a ripple
+		 */
+		begin_reversible_command (_("remove regions"));
+	}
+
 	for (list<std::shared_ptr<Region> >::iterator rl = regions_to_remove.begin(); rl != regions_to_remove.end(); ++rl) {
 
 		std::shared_ptr<Playlist> playlist = (*rl)->playlist();
@@ -5046,16 +5018,14 @@ Editor::remove_regions (const RegionSelection& sel, bool can_ripple, bool as_par
 			continue;
 		}
 
-		/* get_regions_from_selection_and_entered() guarantees that
-		   the playlists involved are unique, so there is no need
-		   to check here.
-		*/
+		if (std::find (playlists.begin(), playlists.end(), playlist) == playlists.end()) {
+			playlists.push_back (playlist);
 
-		playlists.push_back (playlist);
+			playlist->clear_changes ();
+			playlist->clear_owned_changes ();
+			playlist->freeze ();
+		}
 
-		playlist->clear_changes ();
-		playlist->clear_owned_changes ();
-		playlist->freeze ();
 		playlist->remove_region (*rl);
 
 		if (can_ripple && should_ripple()) {
@@ -5064,27 +5034,24 @@ Editor::remove_regions (const RegionSelection& sel, bool can_ripple, bool as_par
 	}
 
 	vector<std::shared_ptr<Playlist> >::iterator pl;
-	bool in_command = false;
+
+	bool commit_result = false;
 
 	for (pl = playlists.begin(); pl != playlists.end(); ++pl) {
+		commit_result = true;
 		(*pl)->thaw ();
 
 		/* We might have removed regions, which alters other regions' layering_index,
 		   so we need to do a recursive diff here.
 		*/
 
-		if (!in_command && !as_part_of_other_command) {
-			begin_reversible_command (_("remove region"));
-			in_command = true;
-		}
 		vector<Command*> cmds;
 		(*pl)->rdiff (cmds);
 		_session->add_commands (cmds);
-
 		_session->add_command(new StatefulDiffCommand (*pl));
 	}
 
-	if (in_command && !as_part_of_other_command) {
+	if (commit_result && !as_part_of_other_command) {
 		commit_reversible_command ();
 	}
 }
@@ -6754,6 +6721,54 @@ Editor::toggle_gain_envelope_active ()
 }
 
 void
+Editor::region_lock ()
+{
+	if (_ignore_region_action) {
+		return;
+	}
+
+	RegionSelection rs = get_regions_from_selection_and_entered ();
+
+	if (!_session || rs.empty()) {
+		return;
+	}
+
+	begin_reversible_command (_("region lock"));
+
+	for (RegionSelection::iterator i = rs.begin(); i != rs.end(); ++i) {
+		(*i)->region()->clear_changes ();
+		(*i)->region()->set_locked (true);
+		_session->add_command (new StatefulDiffCommand ((*i)->region()));
+	}
+
+	commit_reversible_command ();
+}
+
+void
+Editor::region_unlock ()
+{
+	if (_ignore_region_action) {
+		return;
+	}
+
+	RegionSelection rs = get_regions_from_selection_and_entered ();
+
+	if (!_session || rs.empty()) {
+		return;
+	}
+
+	begin_reversible_command (_("region unlock"));
+
+	for (RegionSelection::iterator i = rs.begin(); i != rs.end(); ++i) {
+		(*i)->region()->clear_changes ();
+		(*i)->region()->set_locked (false);
+		_session->add_command (new StatefulDiffCommand ((*i)->region()));
+	}
+
+	commit_reversible_command ();
+}
+
+void
 Editor::toggle_region_lock ()
 {
 	if (_ignore_region_action) {
@@ -7980,7 +7995,7 @@ Editor::split_region_at_points (std::shared_ptr<Region> r, AnalysisFeatureList& 
 	if (select_new) {
 
 		for (list<std::shared_ptr<Region> >::iterator i = new_regions.begin(); i != new_regions.end(); ++i){
-			set_selected_regionview_from_region_list ((*i), Selection::Add);
+			set_selected_regionview_from_region_list ((*i), SelectionAdd);
 		}
 	}
 }

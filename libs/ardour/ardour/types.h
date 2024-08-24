@@ -505,6 +505,12 @@ enum MonitorChoice {
 	MonitorCue = 0x3,
 };
 
+enum FastWindOp {
+	FastWindOff = 0,
+	FastWindVarispeed = 0x1,  //rewind/ffwd commands will varispeed the transport (incl reverse playback)
+	FastWindLocate = 0x2,     //rewind/ffwd commands will jump to next/prior marker
+};
+
 enum MonitorState {
 	MonitoringSilence = 0x0,
 	MonitoringInput = 0x2,
@@ -968,6 +974,15 @@ struct ProcessedRanges {
 
 	ProcessedRanges() : start { 0, 0 }, end { 0, 0 }, cnt (0) {}
 };
+
+enum SelectionOperation {
+	SelectionSet,
+	SelectionAdd,
+	SelectionToggle,
+	SelectionRemove,
+	SelectionExtend /* UI only operation, not core */
+};
+
 
 } // namespace ARDOUR
 

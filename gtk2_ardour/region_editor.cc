@@ -51,6 +51,7 @@
 #include "new_plugin_preset_dialog.h"
 #include "region_editor.h"
 #include "region_view.h"
+#include "timers.h"
 #include "plugin_selector.h"
 #include "plugin_window_proxy.h"
 #include "public_editor.h"
@@ -552,6 +553,8 @@ RegionEditor::RegionFxBox::RegionFxBox (std::shared_ptr<ARDOUR::Region> r)
 
 	_display.signal_key_press_event ().connect (sigc::mem_fun (*this, &RegionFxBox::on_key_press), false);
 
+	screen_update_connection = Timers::super_rapid_connect (sigc::mem_fun (*this, &RegionFxBox::update_controls));
+
 	_scroller.show ();
 	_display.show ();
 
@@ -598,7 +601,8 @@ RegionEditor::RegionFxBox::add_fx_to_display (std::weak_ptr<RegionFxPlugin> wfx)
 	if (!fx) {
 		return;
 	}
-	RegionFxEntry* e = new RegionFxEntry (fx);
+	std::shared_ptr<AudioRegion> ar = std::dynamic_pointer_cast<AudioRegion> (_region);
+	RegionFxEntry* e = new RegionFxEntry (fx, ar && ar->fade_before_fx ());
 	_display.add_child (e, drag_targets ());
 }
 
@@ -632,50 +636,53 @@ RegionEditor::RegionFxBox::fxe_button_press_event (GdkEventButton* ev, RegionFxE
 
 			std::shared_ptr<Plugin> plugin = child->region_fx_plugin ()->plugin ();
 
-			items.push_back (SeparatorElem ());
-			items.push_back (MenuElem (_("Edit..."), sigc::bind (sigc::mem_fun (*this, &RegionFxBox::show_plugin_gui), wfx, true)));
-			items.back ().set_sensitive (plugin->has_editor ());
-			items.push_back (MenuElem (_("Edit with generic controls..."), sigc::bind (sigc::mem_fun (*this, &RegionFxBox::show_plugin_gui), wfx, false)));
-
-			Gtk::Menu* automation_menu = manage (new Gtk::Menu);
-			MenuList&  ac_items (automation_menu->items ());
-
-			for (size_t i = 0; i < plugin->parameter_count (); ++i) {
-				if (!plugin->parameter_is_control (i) || !plugin->parameter_is_input (i)) {
-					continue;
-				}
-				const Evoral::Parameter param (PluginAutomation, 0, i);
-				std::string             label = plugin->describe_parameter (param);
-				if (label == X_("latency") || label == X_("hidden")) {
-					continue;
-				}
-				std::shared_ptr<ARDOUR::AutomationControl> c (std::dynamic_pointer_cast<ARDOUR::AutomationControl> (child->region_fx_plugin ()->control (param)));
-				if (c && c->flags () & (Controllable::HiddenControl | Controllable::NotAutomatable)) {
-					continue;
-				}
-
-				std::weak_ptr<ARDOUR::AutomationControl> wac (c);
-				bool                                     play = c->automation_state () == Play;
-
-				ac_items.push_back (CheckMenuElem (label));
-				Gtk::CheckMenuItem* cmi = static_cast<Gtk::CheckMenuItem*> (&ac_items.back ());
-				cmi->set_active (play);
-				cmi->signal_activate ().connect ([wac, play] () {
-					std::shared_ptr<ARDOUR::AutomationControl> ac = wac.lock ();
-					if (ac) {
-						ac->set_automation_state (play ? ARDOUR::Off : Play);
-					}
-				});
-			}
-
-			if (!ac_items.empty ()) {
+			if (plugin) {
 				items.push_back (SeparatorElem ());
-				items.push_back (MenuElem ("Automation Enable", *automation_menu));
-			} else {
-				delete automation_menu;
+				items.push_back (MenuElem (_("Edit..."), sigc::bind (sigc::mem_fun (*this, &RegionFxBox::show_plugin_gui), wfx, true)));
+				items.back ().set_sensitive (plugin->has_editor ());
+				items.push_back (MenuElem (_("Edit with generic controls..."), sigc::bind (sigc::mem_fun (*this, &RegionFxBox::show_plugin_gui), wfx, false)));
+
+				Gtk::Menu* automation_menu = manage (new Gtk::Menu);
+				MenuList&  ac_items (automation_menu->items ());
+
+				for (size_t i = 0; i < plugin->parameter_count (); ++i) {
+					if (!plugin->parameter_is_control (i) || !plugin->parameter_is_input (i)) {
+						continue;
+					}
+					const Evoral::Parameter param (PluginAutomation, 0, i);
+					std::string             label = plugin->describe_parameter (param);
+					if (label == X_("latency") || label == X_("hidden")) {
+						continue;
+					}
+					std::shared_ptr<ARDOUR::AutomationControl> c (std::dynamic_pointer_cast<ARDOUR::AutomationControl> (child->region_fx_plugin ()->control (param)));
+					if (c && c->flags () & (Controllable::HiddenControl | Controllable::NotAutomatable)) {
+						continue;
+					}
+
+					std::weak_ptr<ARDOUR::AutomationControl> wac (c);
+					bool                                     play = c->automation_state () == Play;
+
+					ac_items.push_back (CheckMenuElem (label));
+					Gtk::CheckMenuItem* cmi = static_cast<Gtk::CheckMenuItem*> (&ac_items.back ());
+					cmi->set_active (play);
+					cmi->signal_activate ().connect ([wac, play] () {
+						std::shared_ptr<ARDOUR::AutomationControl> ac = wac.lock ();
+						if (ac) {
+							ac->set_automation_state (play ? ARDOUR::Off : Play);
+						}
+					});
+				}
+
+				if (!ac_items.empty ()) {
+					items.push_back (SeparatorElem ());
+					items.push_back (MenuElem (_("Automation Enable"), *automation_menu));
+					items.push_back (MenuElem (_("Clear All Automation"), sigc::bind (sigc::mem_fun (*this, &RegionFxBox::clear_automation), wfx)));
+				} else {
+					delete automation_menu;
+				}
+				items.push_back (SeparatorElem ());
 			}
 
-			items.push_back (SeparatorElem ());
 			items.push_back (MenuElem (_("Delete"), sigc::bind (sigc::mem_fun (*this, &RegionFxBox::queue_delete_region_fx), wfx)));
 
 			m->signal_unmap ().connect ([this, &npm] () { npm.remove_submenu (); _display.remove_placeholder (); });
@@ -741,6 +748,60 @@ RegionEditor::RegionFxBox::on_key_press (GdkEventKey* ev)
 		queue_delete_region_fx (std::weak_ptr<RegionFxPlugin> (i->region_fx_plugin ()));
 	}
 	return true;
+}
+
+void
+RegionEditor::RegionFxBox::update_controls ()
+{
+	for (auto const& i : _display.children ()) {
+		std::shared_ptr<ARDOUR::RegionFxPlugin> rfx = i->region_fx_plugin ();
+		PluginWindowProxy* pwp = dynamic_cast<PluginWindowProxy*> (rfx->window_proxy ());
+		if (!pwp || !pwp->get (false) || !pwp->get (false)->is_mapped ()) {
+			continue;
+		}
+		rfx->maybe_emit_changed_signals ();
+	}
+}
+
+void
+RegionEditor::RegionFxBox::clear_automation (std::weak_ptr<ARDOUR::RegionFxPlugin> wfx)
+{
+	std::shared_ptr<RegionFxPlugin> fx (wfx.lock ());
+	if (!fx) {
+		return;
+	}
+	bool in_command = false;
+
+	timepos_t tas ((samplepos_t)_region->length().samples());
+
+	for (auto const& c : fx->controls ()) {
+		std::shared_ptr<AutomationControl> ac = std::dynamic_pointer_cast<AutomationControl> (c.second);
+		if (!ac) {
+			continue;
+		}
+		std::shared_ptr<ARDOUR::AutomationList> alist = ac->alist ();
+		if (!alist) {
+			continue;
+		}
+
+		XMLNode& before (alist->get_state());
+
+		alist->freeze ();
+		alist->clear ();
+		fx->set_default_automation (tas);
+		alist->thaw ();
+		alist->set_automation_state (ARDOUR::Off);
+
+		if (!in_command) {
+			_region->session ().begin_reversible_command (_("Clear region fx automation"));
+			in_command = true;
+		}
+		_region->session ().add_command (new MementoCommand<AutomationList>(*alist.get(), &before, &alist->get_state()));
+	}
+
+	if (in_command) {
+		_region->session ().commit_reversible_command ();
+	}
 }
 
 void
@@ -903,7 +964,7 @@ void
 RegionEditor::RegionFxBox::show_plugin_gui (std::weak_ptr<RegionFxPlugin> wfx, bool custom_ui)
 {
 	std::shared_ptr<RegionFxPlugin> rfx (wfx.lock ());
-	if (!rfx) {
+	if (!rfx || !rfx->plugin ()) {
 		return;
 	}
 
@@ -936,20 +997,35 @@ RegionEditor::RegionFxBox::show_plugin_gui (std::weak_ptr<RegionFxPlugin> wfx, b
 
 /* ****************************************************************************/
 
-RegionEditor::RegionFxEntry::RegionFxEntry (std::shared_ptr<RegionFxPlugin> rfx)
+RegionEditor::RegionFxEntry::RegionFxEntry (std::shared_ptr<RegionFxPlugin> rfx, bool pre)
 	: _fx_btn (ArdourWidgets::ArdourButton::default_elements)
 	, _rfx (rfx)
 {
 	_box.pack_start (_fx_btn, true, true);
 
-	_plugin_preset_pointer = PluginPresetPtr (new PluginPreset (rfx->plugin ()->get_info ()));
+	if (rfx->plugin ()) {
+		_plugin_preset_pointer = PluginPresetPtr (new PluginPreset (rfx->plugin ()->get_info ()));
+		_selectable = true;
+	} else {
+		_plugin_preset_pointer = 0;
+		_selectable = false;
+	}
 
 	_fx_btn.set_fallthrough_to_parent (true);
 	_fx_btn.set_text (name ());
 	_fx_btn.set_active (true);
-	_fx_btn.set_name ("processor postfader");
 
-	if (rfx->plugin ()->has_editor ()) {
+	if (!_selectable) {
+		_fx_btn.set_name ("processor stub");
+	} else if (pre) {
+		_fx_btn.set_name ("processor prefader");
+	} else {
+		_fx_btn.set_name ("processor postfader");
+	}
+
+	if (!rfx->plugin ()) {
+		set_tooltip (_fx_btn, string_compose (_("<b>%1</b>\nThe Plugin is not available on this system\nand has been replaced by a stub."), name ()));
+	} else if (rfx->plugin ()->has_editor ()) {
 		set_tooltip (_fx_btn, string_compose (_("<b>%1</b>\nDouble-click to show GUI.\n%2+double-click to show generic GUI."), name (), Keyboard::secondary_modifier_name ()));
 	} else {
 		set_tooltip (_fx_btn, string_compose (_("<b>%1</b>\nDouble-click to show generic GUI."), name ()));
@@ -980,7 +1056,7 @@ RegionEditor::RegionFxEntry::can_copy_state (Gtkmm2ext::DnDVBoxChild* o) const
 	}
 	std::shared_ptr<Plugin> my_p = self->plugin ();
 	std::shared_ptr<Plugin> ot_p = othr->plugin ();
-	return my_p->unique_id () == ot_p->unique_id ();
+	return my_p && ot_p && my_p->unique_id () == ot_p->unique_id ();
 }
 
 void
@@ -1002,7 +1078,9 @@ RegionEditor::RegionFxEntry::drag_data_get (Glib::RefPtr<Gdk::DragContext> const
 	}
 
 	std::shared_ptr<Plugin> plugin = _rfx->plugin ();
-	assert (plugin);
+	if (!plugin) {
+		return false;
+	}
 
 	PluginManager& manager (PluginManager::instance ());
 	bool           fav = manager.get_status (_plugin_preset_pointer->_pip) == PluginManager::Favorite;
