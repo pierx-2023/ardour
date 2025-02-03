@@ -18,13 +18,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef __ardour_port_set_h__
-#define __ardour_port_set_h__
+#pragma once
 
 #include <vector>
 #include "ardour/chan_count.h"
-#include <boost/utility.hpp>
-
 namespace ARDOUR {
 
 class Port;
@@ -156,4 +153,3 @@ private:
 
 } // namespace ARDOUR
 
-#endif // __ardour_port_set_h__

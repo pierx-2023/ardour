@@ -48,7 +48,7 @@
 #include <glib.h>
 #include "pbd/gstdio_compat.h"
 
-#include <gtkmm/stock.h>
+#include <ytkmm/stock.h>
 
 #include "pbd/basename.h"
 #include "pbd/file_utils.h"
@@ -758,7 +758,7 @@ ARDOUR_UI::check_memory_locking ()
 
 	XMLNode* memory_warning_node = Config->instant_xml (X_("no-memory-warning"));
 
-	if (AudioEngine::instance()->is_realtime() && memory_warning_node == 0) {
+	if (memory_warning_node == 0) {
 
 		struct rlimit limits;
 		int64_t ram;

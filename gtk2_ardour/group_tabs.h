@@ -19,10 +19,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef __gtk_ardour_group_tabs_h__
-#define __gtk_ardour_group_tabs_h__
+#pragma once
 
-#include <gtkmm/menu.h>
+#include <ytkmm/menu.h>
 
 #include "ardour/session_handle.h"
 #include "ardour/types.h"
@@ -91,6 +90,8 @@ protected:
 
 	/** @return Scroll offset of \ref visible_extent along the primary axis */
 	double offset () const { return _offset; }
+
+	bool _dragging_new_tab; ///< true if we're dragging a new tab
 
 private:
 	static void emit_gui_changed_for_members (std::shared_ptr<ARDOUR::RouteList>);
@@ -165,7 +166,6 @@ private:
 	Tab* _dragging; ///< tab being dragged, or 0
 	/** routes that were in the tab that is being dragged when the drag started */
 	ARDOUR::RouteList _initial_dragging_routes;
-	bool _dragging_new_tab; ///< true if we're dragging a new tab
 	bool _drag_moved; ///< true if there has been movement during any current drag
 	double _drag_fixed; ///< the position of the fixed end of the tab being dragged
 	double _drag_moving; ///< the position of the moving end of the tab being dragged
@@ -184,4 +184,3 @@ private:
 	static std::list<Gdk::Color> _used_colors;
 };
 
-#endif // __gtk_ardour_group_tabs_h__

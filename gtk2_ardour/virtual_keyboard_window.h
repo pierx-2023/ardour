@@ -19,8 +19,8 @@
 #ifndef _virtual_keyboard_window_h_
 #define _virtual_keyboard_window_h_
 
-#include <gtkmm/box.h>
-#include <gtkmm/spinbutton.h>
+#include <ytkmm/box.h>
+#include <ytkmm/spinbutton.h>
 
 #include "pbd/controllable.h"
 #include "pbd/signals.h"
@@ -75,7 +75,7 @@ public:
 	double upper () const { return _upper; }
 	double normal () const { return _normal; }
 
-	PBD::Signal1<void, int> ValueChanged;
+	PBD::Signal<void(int)> ValueChanged;
 
 protected:
 	double _lower;

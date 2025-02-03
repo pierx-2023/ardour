@@ -80,7 +80,7 @@ class MIDISurface : public ARDOUR::ControlProtocol
 
 	std::list<std::shared_ptr<ARDOUR::Bundle> > bundles ();
 
-	PBD::Signal0<void> ConnectionChange;
+	PBD::Signal<void()> ConnectionChange;
 
 	CONTROL_PROTOCOL_THREADS_NEED_TEMPO_MAP_DECL();
 
@@ -90,6 +90,7 @@ class MIDISurface : public ARDOUR::ControlProtocol
   protected:
 	bool with_pad_filter;
 	bool _in_use;
+	bool _data_required;
 	std::string port_name_prefix;
 	MIDI::Port* _input_port;
 	MIDI::Port* _output_port;

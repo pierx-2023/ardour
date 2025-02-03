@@ -29,7 +29,7 @@
 #include <unistd.h>
 #include <climits>
 
-#include <gtkmm/messagedialog.h>
+#include <ytkmm/messagedialog.h>
 
 #include "pbd/gstdio_compat.h"
 
@@ -417,7 +417,7 @@ Editor::bounce_region_selection (bool with_processing)
 			if (!track) {
 				continue;
 			}
-			if (track->triggerbox()->trigger(trigger_slot)->region()) {
+			if (track->triggerbox()->trigger(trigger_slot)->playable()) {
 				overwriting = true;
 			}
 		}

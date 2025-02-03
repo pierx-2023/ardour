@@ -24,9 +24,9 @@
 #include "ardour/route_group.h"
 #include "ardour/session.h"
 
-#include <gtkmm/table.h>
-#include <gtkmm/stock.h>
-#include <gtkmm/messagedialog.h>
+#include <ytkmm/table.h>
+#include <ytkmm/stock.h>
+#include <ytkmm/messagedialog.h>
 
 #include "gtkmm2ext/colors.h"
 
@@ -179,7 +179,7 @@ RouteGroupDialog::RouteGroupDialog (RouteGroup* g, bool creating_new)
 		add_button (Stock::NEW, RESPONSE_OK);
 		set_default_response (RESPONSE_OK);
 	} else {
-		_group->Destroyed.connect (_group_connection, invalidator (*this), boost::bind (&Dialog::response, this, RESPONSE_CANCEL), gui_context());
+		_group->Destroyed.connect (_group_connection, invalidator (*this), std::bind (&Dialog::response, this, RESPONSE_CANCEL), gui_context());
 	}
 
 	show_all_children ();

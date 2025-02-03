@@ -30,8 +30,8 @@
 #include "pbd/signals.h"
 #include "pbd/xml++.h"
 
-#include <gtkmm/colorselection.h>
-#include <gtkmm/textview.h>
+#include <ytkmm/colorselection.h>
+#include <ytkmm/textview.h>
 
 #include "gtkmm2ext/widget_state.h"
 
@@ -345,7 +345,7 @@ private:
 	 *  by a click on the `Sends' button.  The parameter is the route that the sends are
 	 *  to, or 0 if no route is now in this mode.
 	 */
-	static PBD::Signal1<void, std::shared_ptr<ARDOUR::Route> > BusSendDisplayChanged;
+	static PBD::Signal<void(std::shared_ptr<ARDOUR::Route> )> BusSendDisplayChanged;
 
 	static std::weak_ptr<ARDOUR::Route> _showing_sends_to;
 

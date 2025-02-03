@@ -20,17 +20,17 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include <gtkmm/comboboxtext.h>
-#include <gtkmm/box.h>
-#include <gtkmm/spinbutton.h>
-#include <gtkmm/table.h>
-#include <gtkmm/treeview.h>
-#include <gtkmm/liststore.h>
-#include <gtkmm/treestore.h>
-#include <gtkmm/notebook.h>
-#include <gtkmm/cellrenderercombo.h>
-#include <gtkmm/scale.h>
-#include <gtkmm/alignment.h>
+#include <ytkmm/comboboxtext.h>
+#include <ytkmm/box.h>
+#include <ytkmm/spinbutton.h>
+#include <ytkmm/table.h>
+#include <ytkmm/treeview.h>
+#include <ytkmm/liststore.h>
+#include <ytkmm/treestore.h>
+#include <ytkmm/notebook.h>
+#include <ytkmm/cellrenderercombo.h>
+#include <ytkmm/scale.h>
+#include <ytkmm/alignment.h>
 
 #include "pbd/error.h"
 #include "pbd/unwind.h"
@@ -141,12 +141,12 @@ MackieControlProtocolGUI::MackieControlProtocolGUI (MackieControlProtocol& p)
 	Gtkmm2ext::set_popdown_strings (_surface_combo, surfaces);
 	_surface_combo.signal_changed().connect (sigc::mem_fun (*this, &MackieControlProtocolGUI::surface_combo_changed));
 
-	_cp.DeviceChanged.connect (device_change_connection, invalidator (*this), boost::bind (&MackieControlProtocolGUI::device_changed, this), gui_context());
+	_cp.DeviceChanged.connect (device_change_connection, invalidator (*this), std::bind (&MackieControlProtocolGUI::device_changed, this), gui_context());
 
 	/* catch future changes to connection state */
-	ARDOUR::AudioEngine::instance()->PortRegisteredOrUnregistered.connect (_port_connections, invalidator (*this), boost::bind (&MackieControlProtocolGUI::connection_handler, this), gui_context());
-	ARDOUR::AudioEngine::instance()->PortPrettyNameChanged.connect (_port_connections, invalidator (*this), boost::bind (&MackieControlProtocolGUI::connection_handler, this), gui_context());
-	_cp.ConnectionChange.connect (_port_connections, invalidator (*this), boost::bind (&MackieControlProtocolGUI::connection_handler, this), gui_context());
+	ARDOUR::AudioEngine::instance()->PortRegisteredOrUnregistered.connect (_port_connections, invalidator (*this), std::bind (&MackieControlProtocolGUI::connection_handler, this), gui_context());
+	ARDOUR::AudioEngine::instance()->PortPrettyNameChanged.connect (_port_connections, invalidator (*this), std::bind (&MackieControlProtocolGUI::connection_handler, this), gui_context());
+	_cp.ConnectionChange.connect (_port_connections, invalidator (*this), std::bind (&MackieControlProtocolGUI::connection_handler, this), gui_context());
 
 	ipmidi_base_port_adjustment.signal_value_changed().connect (sigc::mem_fun (*this, &MackieControlProtocolGUI::ipmidi_spinner_changed));
 

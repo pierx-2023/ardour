@@ -21,8 +21,6 @@
 #include "pbd/gstdio_compat.h"
 #include <glibmm.h>
 
-#include <boost/unordered_map.hpp>
-
 #include "pbd/basename.h"
 #include "pbd/compose.h"
 #include "pbd/convert.h"
@@ -57,146 +55,6 @@ using namespace ARDOUR;
 using namespace Temporal;
 using namespace Steinberg;
 using namespace Presonus;
-
-#if SMTG_OS_LINUX
-class AVST3Runloop : public Linux::IRunLoop
-{
-private:
-	struct EventHandler
-	{
-		EventHandler (Linux::IEventHandler* handler = 0, GIOChannel* gio_channel = 0, guint source_id = 0)
-			: _handler (handler)
-			, _gio_channel (gio_channel)
-			, _source_id (source_id)
-		{}
-
-		bool operator== (EventHandler const& other) {
-			return other._handler == _handler && other._gio_channel == _gio_channel && other._source_id == _source_id;
-		}
-		Linux::IEventHandler* _handler;
-		GIOChannel*           _gio_channel;
-		guint                 _source_id;
-	};
-
-	boost::unordered_map<FileDescriptor, EventHandler> _event_handlers;
-	boost::unordered_map<guint, Linux::ITimerHandler*> _timer_handlers;
-
-	static gboolean event (GIOChannel* source, GIOCondition condition, gpointer data)
-	{
-		Linux::IEventHandler* handler = reinterpret_cast<Linux::IEventHandler*> (data);
-		handler->onFDIsSet (g_io_channel_unix_get_fd (source));
-		if (condition & ~G_IO_IN) {
-			/* remove on error */
-			return false;
-		} else {
-			return true;
-		}
-	}
-
-	static gboolean timeout (gpointer data)
-	{
-		Linux::ITimerHandler* handler = reinterpret_cast<Linux::ITimerHandler*> (data);
-		handler->onTimer ();
-		return true;
-	}
-
-public:
-	~AVST3Runloop ()
-	{
-		clear ();
-	}
-
-	void clear () {
-		Glib::Threads::Mutex::Lock lm (_lock);
-		for (boost::unordered_map<FileDescriptor, EventHandler>::const_iterator it = _event_handlers.begin (); it != _event_handlers.end (); ++it) {
-			g_source_remove (it->second._source_id);
-			g_io_channel_unref (it->second._gio_channel);
-		}
-		for (boost::unordered_map<guint, Linux::ITimerHandler*>::const_iterator it = _timer_handlers.begin (); it != _timer_handlers.end (); ++it) {
-			g_source_remove (it->first);
-		}
-		_event_handlers.clear ();
-		_timer_handlers.clear ();
-	}
-
-	/* VST3 IRunLoop interface */
-	tresult registerEventHandler (Linux::IEventHandler* handler, FileDescriptor fd) SMTG_OVERRIDE
-	{
-		if (!handler || _event_handlers.find(fd) != _event_handlers.end()) {
-			return kInvalidArgument;
-		}
-
-		Glib::Threads::Mutex::Lock lm (_lock);
-		GIOChannel* gio_channel = g_io_channel_unix_new (fd);
-		guint id = g_io_add_watch (gio_channel, (GIOCondition) (G_IO_IN /*| G_IO_OUT*/ | G_IO_ERR | G_IO_HUP), event, handler);
-		_event_handlers[fd] = EventHandler (handler, gio_channel, id);
-		return kResultTrue;
-	}
-
-	tresult unregisterEventHandler (Linux::IEventHandler* handler) SMTG_OVERRIDE
-	{
-		if (!handler) {
-			return kInvalidArgument;
-		}
-
-		tresult rv = false;
-		Glib::Threads::Mutex::Lock lm (_lock);
-		for (boost::unordered_map<FileDescriptor, EventHandler>::const_iterator it = _event_handlers.begin (); it != _event_handlers.end ();) {
-			if (it->second._handler == handler) {
-				g_source_remove (it->second._source_id);
-				g_io_channel_unref (it->second._gio_channel);
-				it = _event_handlers.erase (it);
-				rv = kResultTrue;
-			} else {
-				++it;
-			}
-		}
-		return rv;
-	}
-
-	tresult registerTimer (Linux::ITimerHandler* handler, TimerInterval milliseconds) SMTG_OVERRIDE
-	{
-		if (!handler || milliseconds == 0) {
-			return kInvalidArgument;
-		}
-		Glib::Threads::Mutex::Lock lm (_lock);
-		guint id = g_timeout_add_full (G_PRIORITY_HIGH_IDLE, milliseconds, timeout, handler, NULL);
-		_timer_handlers[id] = handler;
-		return kResultTrue;
-
-	}
-
-	tresult unregisterTimer (Linux::ITimerHandler* handler) SMTG_OVERRIDE
-	{
-		if (!handler) {
-			return kInvalidArgument;
-		}
-
-		tresult rv = false;
-		Glib::Threads::Mutex::Lock lm (_lock);
-		for (boost::unordered_map<guint, Linux::ITimerHandler*>::const_iterator it = _timer_handlers.begin (); it != _timer_handlers.end ();) {
-			if (it->second == handler) {
-				g_source_remove (it->first);
-				it = _timer_handlers.erase (it);
-				rv = kResultTrue;
-			} else {
-				++it;
-			}
-		}
-		return rv;
-	}
-
-	uint32 PLUGIN_API addRef () SMTG_OVERRIDE { return 1; }
-	uint32 PLUGIN_API release () SMTG_OVERRIDE { return 1; }
-	tresult queryInterface (const TUID, void**) SMTG_OVERRIDE { return kNoInterface; }
-
-private:
-	Glib::Threads::Mutex _lock;
-};
-
-AVST3Runloop static_runloop;
-
-#endif
 
 VST3Plugin::VST3Plugin (AudioEngine& engine, Session& session, VST3PI* plug)
 	: Plugin (engine, session)
@@ -237,8 +95,8 @@ VST3Plugin::init ()
 	Vst::ProcessContext& context (_plug->context ());
 	context.sampleRate = _session.nominal_sample_rate ();
 	_plug->set_block_size (_session.get_block_size ());
-	_plug->OnResizeView.connect_same_thread (_connections, boost::bind (&VST3Plugin::forward_resize_view, this, _1, _2));
-	_plug->OnParameterChange.connect_same_thread (_connections, boost::bind (&VST3Plugin::parameter_change_handler, this, _1, _2, _3));
+	_plug->OnResizeView.connect_same_thread (_connections, std::bind (&VST3Plugin::forward_resize_view, this, _1, _2));
+	_plug->OnParameterChange.connect_same_thread (_connections, std::bind (&VST3Plugin::parameter_change_handler, this, _1, _2, _3));
 
 	/* assume only default active busses are connected */
 	for (auto const& abi : _plug->bus_info_in ()) {
@@ -380,7 +238,7 @@ VST3Plugin::set_automation_control (uint32_t port, std::shared_ptr<ARDOUR::Autom
 	if (!ac->alist () || !_plug->subscribe_to_automation_changes ()) {
 		return;
 	}
-	ac->alist ()->automation_state_changed.connect_same_thread (_connections, boost::bind (&VST3PI::automation_state_changed, _plug, port, _1, std::weak_ptr<AutomationList> (ac->alist ())));
+	ac->alist ()->automation_state_changed.connect_same_thread (_connections, std::bind (&VST3PI::automation_state_changed, _plug, port, _1, std::weak_ptr<AutomationList> (ac->alist ())));
 }
 
 std::set<Evoral::Parameter>
@@ -820,9 +678,9 @@ VST3Plugin::set_block_size (pframes_t n_samples)
 }
 
 samplecnt_t
-VST3Plugin::plugin_tail () const
+VST3Plugin::plugin_tailtime () const
 {
-	return _plug->plugin_tail ();
+	return _plug->plugin_tailtime ();
 }
 
 samplecnt_t
@@ -1221,6 +1079,14 @@ VST3PluginInfo::load (Session& session)
 		if (!m) {
 			DEBUG_TRACE (DEBUG::VST3Config, string_compose ("VST3 Loading: %1\n", path));
 			m = VST3PluginModule::load (path);
+#if SMTG_OS_LINUX
+			IPluginFactory* factory = m->factory ();
+			IPtr<IPluginFactory3> factory3 = FUnknownPtr<IPluginFactory3> (factory);
+			if (factory3) {
+				DEBUG_TRACE (DEBUG::VST3Config, "VST3 detected IPluginFactory3, setting Linux runloop host context\n");
+				factory3->setHostContext ((FUnknown*) HostApplication::getHostContext ());
+			}
+#endif
 		}
 		PluginPtr          plugin;
 		Steinberg::VST3PI* plug = new VST3PI (m, unique_id);
@@ -1329,6 +1195,7 @@ VST3PI::VST3PI (std::shared_ptr<ARDOUR::VST3PluginModule> m, std::string unique_
 	, _rpc_queue (RouteProcessorChange::NoProcessorChange, false)
 	, _no_kMono (false)
 	, _restart_component_is_synced (false)
+	, _in_set_owner (false)
 {
 	using namespace std;
 	IPluginFactory* factory = m->factory ();
@@ -1424,14 +1291,6 @@ VST3PI::VST3PI (std::shared_ptr<ARDOUR::VST3PluginModule> m, std::string unique_
 		_component->release ();
 		throw failed_constructor ();
 	}
-
-#if SMTG_OS_LINUX
-	IPtr<IPluginFactory3> factory3 = FUnknownPtr<IPluginFactory3> (factory);
-	if (factory3) {
-		Vst::IComponentHandler* ctx = this;
-		factory3->setHostContext ((FUnknown*) ctx);
-	}
-#endif
 
 	/* prepare process context */
 	memset (&_context, 0, sizeof (Vst::ProcessContext));
@@ -1661,8 +1520,7 @@ VST3PI::queryInterface (const TUID _iid, void** obj)
 
 #if SMTG_OS_LINUX
 	if (FUnknownPrivate::iidEqual (_iid, Linux::IRunLoop::iid)) {
-		*obj = &static_runloop;
-		return kResultOk;
+		return HostApplication::getHostContext()->queryInterface (_iid, obj);
 	}
 #endif
 
@@ -1959,7 +1817,7 @@ VST3PI::plugin_latency ()
 }
 
 uint32_t
-VST3PI::plugin_tail ()
+VST3PI::plugin_tailtime ()
 {
 	if (!_plugin_tail) { // XXX this is currently never reset
 		_plugin_tail = _processor->getTailSamples ();
@@ -1978,9 +1836,13 @@ VST3PI::set_owner (SessionObject* o)
 		return;
 	}
 
+	_in_set_owner.store (true);
+
 	if (!setup_psl_info_handler ()) {
 		setup_info_listener ();
 	}
+
+	_in_set_owner.store (false);
 }
 
 void
@@ -2875,8 +2737,8 @@ VST3PI::setup_info_listener ()
 	DEBUG_TRACE (DEBUG::VST3Config, "VST3PI::setup_info_listener\n");
 	Stripable* s = dynamic_cast<Stripable*> (_owner);
 
-	s->PropertyChanged.connect_same_thread (_strip_connections, boost::bind (&VST3PI::stripable_property_changed, this, _1));
-	s->presentation_info ().PropertyChanged.connect_same_thread (_strip_connections, boost::bind (&VST3PI::stripable_property_changed, this, _1));
+	s->PropertyChanged.connect_same_thread (_strip_connections, std::bind (&VST3PI::stripable_property_changed, this, _1));
+	s->presentation_info ().PropertyChanged.connect_same_thread (_strip_connections, std::bind (&VST3PI::stripable_property_changed, this, _1));
 
 	/* send initial change */
 	stripable_property_changed (PropertyChange ());
@@ -2952,7 +2814,7 @@ VST3PI::automation_state_changed (uint32_t port, AutoState s, std::weak_ptr<Auto
 /* ****************************************************************************/
 
 static std::shared_ptr<AutomationControl>
-lookup_ac (SessionObject* o, FIDString id)
+lookup_ac (SessionObject* o, FIDString id, bool locked = false)
 {
 	Stripable* s = dynamic_cast<Stripable*> (o);
 	if (!s) {
@@ -2985,8 +2847,8 @@ lookup_ac (SessionObject* o, FIDString id)
 		 * recurive locks (deadlock, or double unlock crash).
 		 */
 		int send_id = atoi (id + strlen (ContextInfo::kSendLevel));
-		if (s->send_enable_controllable (send_id)) {
-			return s->send_level_controllable (send_id);
+		if (send_id >=0 && s->send_enable_controllable (send_id)) {
+			return s->send_level_controllable (send_id, locked);
 		}
 #endif
 	}
@@ -3107,12 +2969,13 @@ VST3PI::getContextInfoValue (double& value, FIDString id)
 	if (0 == strcmp (id, ContextInfo::kMaxVolume)) {
 		value = s->gain_control ()->upper ();
 	} else if (0 == strcmp (id, ContextInfo::kMaxSendLevel)) {
+		value = 2.0; // Config->get_max_gain();
 #ifdef MIXBUS
-		if (s->send_level_controllable (0)) {
+		if (s->send_enable_controllable (0)) {
+			assert (s->send_level_controllable (0));
 			value = s->send_level_controllable (0)->upper (); // pow (10.0, .05 *  15.0);
 		}
 #endif
-		value = 2.0; // Config->get_max_gain();
 	} else if (0 == strcmp (id, ContextInfo::kVolume)) {
 		std::shared_ptr<AutomationControl> ac = s->gain_control ();
 		value                                   = ac->get_value (); // gain coefficient  0..2 (1.0 = 0dB)
@@ -3126,11 +2989,12 @@ VST3PI::getContextInfoValue (double& value, FIDString id)
 			value = 0.5; // center
 		}
 	} else if (0 == strncmp (id, ContextInfo::kSendLevel, strlen (ContextInfo::kSendLevel))) {
-		std::shared_ptr<AutomationControl> ac = lookup_ac (_owner, id);
+		std::shared_ptr<AutomationControl> ac = lookup_ac (_owner, id, _in_set_owner.load ());
 		if (ac) {
 			value = ac->get_value (); // gain cofficient
 			psl_subscribe_to (ac, id);
 		} else {
+			value = 0;
 			DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::getContextInfoValue<double> invalid AC %1\n", id));
 			return kInvalidArgument; // send index out of bounds
 		}
@@ -3166,14 +3030,14 @@ VST3PI::setContextInfoValue (FIDString id, double value)
 			ac->set_value (ac->interface_to_internal (value, true), PBD::Controllable::NoGroup);
 		}
 	} else if (0 == strncmp (id, ContextInfo::kSendLevel, strlen (ContextInfo::kSendLevel))) {
-		std::shared_ptr<AutomationControl> ac = lookup_ac (_owner, id);
+		std::shared_ptr<AutomationControl> ac = lookup_ac (_owner, id, _in_set_owner.load ());
 		if (ac) {
 			ac->set_value (value, Controllable::NoGroup);
 		} else {
 			return kInvalidArgument; // send index out of bounds
 		}
 	} else {
-		DEBUG_TRACE (DEBUG::VST3Callbacks, "VST3PI::setContextInfoValue<double>: unsupported ID\n");
+		DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::setContextInfoValue<double>: unsupported ID %1\n", id));
 		return kInvalidArgument;
 	}
 	return kResultOk;
@@ -3214,7 +3078,7 @@ VST3PI::setContextInfoValue (FIDString id, int32 value)
 			s->session ().set_control (ac, value != 0 ? 1 : 0, Controllable::NoGroup);
 		}
 	} else {
-		DEBUG_TRACE (DEBUG::VST3Callbacks, "VST3PI::setContextInfoValue<int>: unsupported ID\n");
+		DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::setContextInfoValue<int>: unsupported ID %1\n", id));
 		return kNotImplemented;
 	}
 	return kResultOk;
@@ -3244,6 +3108,7 @@ VST3PI::beginEditContextInfoValue (FIDString id)
 	}
 	std::shared_ptr<AutomationControl> ac = lookup_ac (_owner, id);
 	if (!ac) {
+		DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::beginEditContextInfoValue %1 -- invalid AC\n", id));
 		return kInvalidArgument;
 	}
 	DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::beginEditContextInfoValue %1\n", id));
@@ -3260,6 +3125,7 @@ VST3PI::endEditContextInfoValue (FIDString id)
 	}
 	std::shared_ptr<AutomationControl> ac = lookup_ac (_owner, id);
 	if (!ac) {
+		DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::endEditContextInfoValue %1 -- invalid AC\n", id));
 		return kInvalidArgument;
 	}
 	DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::endEditContextInfoValue %1\n", id));
@@ -3282,7 +3148,7 @@ VST3PI::psl_subscribe_to (std::shared_ptr<ARDOUR::AutomationControl> ac, FIDStri
 	}
 
 	DEBUG_TRACE (DEBUG::VST3Callbacks, string_compose ("VST3PI::psl_subscribe_to: %1\n", ac->name ()));
-	ac->Changed.connect_same_thread (_ac_connection_list, boost::bind (&VST3PI::forward_signal, this, nfo2.get (), id));
+	ac->Changed.connect_same_thread (_ac_connection_list, std::bind (&VST3PI::forward_signal, this, nfo2.get (), id));
 }
 
 void
@@ -3342,8 +3208,8 @@ VST3PI::setup_psl_info_handler ()
 	}
 
 	Stripable* s = dynamic_cast<Stripable*> (_owner);
-	s->PropertyChanged.connect_same_thread (_strip_connections, boost::bind (&VST3PI::psl_stripable_property_changed, this, _1));
-	s->presentation_info ().PropertyChanged.connect_same_thread (_strip_connections, boost::bind (&VST3PI::psl_stripable_property_changed, this, _1));
+	s->PropertyChanged.connect_same_thread (_strip_connections, std::bind (&VST3PI::psl_stripable_property_changed, this, _1));
+	s->presentation_info ().PropertyChanged.connect_same_thread (_strip_connections, std::bind (&VST3PI::psl_stripable_property_changed, this, _1));
 
 	return true;
 }

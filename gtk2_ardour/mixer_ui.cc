@@ -33,14 +33,13 @@
 #include <map>
 #include <sigc++/bind.h>
 
-#include <boost/foreach.hpp>
 
 #include <glibmm/threads.h>
 
-#include <gtkmm/accelmap.h>
-#include <gtkmm/menu.h>
-#include <gtkmm/offscreenwindow.h>
-#include <gtkmm/stock.h>
+#include <ytkmm/accelmap.h>
+#include <ytkmm/menu.h>
+#include <ytkmm/offscreenwindow.h>
+#include <ytkmm/stock.h>
 
 #include "pbd/convert.h"
 #include "pbd/unwind.h"
@@ -56,9 +55,11 @@
 #include "ardour/monitor_control.h"
 #include "ardour/panner_shell.h"
 #include "ardour/plugin_manager.h"
+#include "ardour/profile.h"
 #include "ardour/route_group.h"
 #include "ardour/selection.h"
 #include "ardour/session.h"
+#include "ardour/utils.h"
 #include "ardour/vca.h"
 #include "ardour/vca_manager.h"
 
@@ -99,6 +100,14 @@
 
 #define PX_SCALE(px) std::max ((float)px, rintf ((float)px* UIConfiguration::instance ().get_ui_scale ()))
 
+#ifndef N_MIXER_SCENE_BTNS
+# ifdef MIXBUS
+# define N_MIXER_SCENE_BTNS 12
+# else
+# define N_MIXER_SCENE_BTNS 8
+# endif
+#endif
+
 using namespace ARDOUR;
 using namespace ArdourWidgets;
 using namespace ARDOUR_UI_UTILS;
@@ -111,13 +120,6 @@ using namespace std;
 
 using PBD::atoi;
 using PBD::Unwinder;
-
-static const gchar *_plugin_list_mode_strings[] = {
-	N_("Favorite Plugins"),
-	N_("Recent Plugins"),
-	N_("Top-10 Plugins"),
-	0
-};
 
 Mixer_UI* Mixer_UI::_instance = 0;
 
@@ -132,7 +134,7 @@ Mixer_UI::instance ()
 }
 
 Mixer_UI::Mixer_UI ()
-	: Tabbable (_content, _("Mixer"), X_("mixer"))
+	: Tabbable (_("Mixer"), X_("mixer"), NULL, true, Profile->get_mixbus () ? Tabbable::PaneLayout (Tabbable::AttBottom | Tabbable::PaneRight) : Tabbable::PaneLeft)
 	, plugin_search_clear_button (X_("Clear"))
 	, _mixer_scene_release (0)
 	, no_track_list_redisplay (false)
@@ -149,22 +151,21 @@ Mixer_UI::Mixer_UI ()
 	, ignore_plugin_reorder (false)
 	, _in_group_rebuild_or_clear (false)
 	, _route_deletion_in_progress (false)
+	, plugin_list_mode (PLM_Favorite)
 	, _maximised (false)
 	, _strip_selection_change_without_scroll (false)
 	, _selection (*this, *this)
 {
-
-	plugin_list_mode_strings = I18N (_plugin_list_mode_strings);
 
 	load_bindings ();
 	register_actions ();
 	Glib::RefPtr<ToggleAction> fb_act = ActionManager::get_toggle_action ("Mixer", "ToggleFoldbackStrip");
 	fb_act->set_sensitive (false);
 
-	_content.set_data ("ardour-bindings", bindings);
+	contents().set_data ("ardour-bindings", bindings);
 
-	PresentationInfo::Change.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::presentation_info_changed, this, _1), gui_context());
-	Route::FanOut.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::fan_out, this, _1, false, true), gui_context());
+	PresentationInfo::Change.connect (*this, invalidator (*this), std::bind (&Mixer_UI::presentation_info_changed, this, _1), gui_context());
+	Route::FanOut.connect (*this, invalidator (*this), std::bind (&Mixer_UI::fan_out, this, _1, false, true), gui_context());
 
 	scroller.set_can_default (true);
 	// set_default (scroller);
@@ -247,10 +248,6 @@ Mixer_UI::Mixer_UI ()
 
 	group_display_vbox.pack_start (group_display_scroller, true, true);
 
-	group_display_frame.set_name ("BaseFrame");
-	group_display_frame.set_shadow_type (Gtk::SHADOW_IN);
-	group_display_frame.add (group_display_vbox);
-
 	list<TargetEntry> target_list;
 	target_list.push_back (TargetEntry ("x-ardour/plugin.preset", Gtk::TARGET_SAME_APP));
 
@@ -278,43 +275,26 @@ Mixer_UI::Mixer_UI ()
 	favorite_plugins_model->signal_row_has_child_toggled().connect (sigc::mem_fun (*this, &Mixer_UI::sync_treeview_favorite_ui_state));
 	favorite_plugins_model->signal_row_deleted().connect (sigc::mem_fun (*this, &Mixer_UI::favorite_plugins_deleted));
 
-	favorite_plugins_mode_combo.AddMenuElem (Menu_Helpers::MenuElem (_("Favorite Plugins"), sigc::bind(sigc::mem_fun(*this, &Mixer_UI::set_plugin_list_mode), PLM_Favorite)));
-	favorite_plugins_mode_combo.AddMenuElem (Menu_Helpers::MenuElem (_("Recent Plugins"), sigc::bind(sigc::mem_fun(*this, &Mixer_UI::set_plugin_list_mode), PLM_Recent)));
-	favorite_plugins_mode_combo.AddMenuElem (Menu_Helpers::MenuElem (_("Top-10 Plugins"), sigc::bind(sigc::mem_fun(*this, &Mixer_UI::set_plugin_list_mode), PLM_TopHits)));
-	favorite_plugins_mode_combo.set_size_request(-1, 24);
-	set_plugin_list_mode(PLM_Favorite);
-
 	plugin_search_entry.signal_changed().connect (sigc::mem_fun (*this, &Mixer_UI::plugin_search_entry_changed));
 	plugin_search_clear_button.signal_clicked.connect (sigc::mem_fun (*this, &Mixer_UI::plugin_search_clear_button_clicked));
 
 	favorite_plugins_scroller.add (favorite_plugins_display);
 	favorite_plugins_scroller.set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
 
+	favorite_plugins_search_hbox.set_spacing (2);
 	favorite_plugins_search_hbox.pack_start (plugin_search_entry, true, true);
 	favorite_plugins_search_hbox.pack_start (plugin_search_clear_button, false, false);
 
-	favorite_plugins_frame.set_name ("BaseFrame");
-	favorite_plugins_frame.set_shadow_type (Gtk::SHADOW_IN);
-	favorite_plugins_frame.add (favorite_plugins_vbox);
-
-	favorite_plugins_vbox.pack_start (favorite_plugins_mode_combo, false, false);
+	favorite_plugins_vbox.set_spacing (3);
 	favorite_plugins_vbox.pack_start (favorite_plugins_scroller, true, true);
 	favorite_plugins_vbox.pack_start (favorite_plugins_search_hbox, false, false);
-
-	Gtk::Label *l = manage (new Label (_("Mixer Scenes (F1...F8 to recall)")));
-	l->set_alignment(0, 0.5);
-	Gtk::Table *padder = manage (new Table ());
-	padder->set_border_width(4);
-	padder->attach (*l, 0,1,0,1, Gtk::FILL, Gtk::FILL);
-
-	_mixer_scene_vbox.pack_start(*padder, false, false);
 
 	_mixer_scene_table.set_border_width(4);
 	_mixer_scene_table.set_spacings(4);
 	_mixer_scene_table.set_homogeneous(false);
 
 	for (int column = 0; column < 1; ++column) {
-		for (int row = 0; row < 8; ++row) {
+		for (int row = 0; row < N_MIXER_SCENE_BTNS; ++row) {
 			int col       = column * 2;
 			int scn_index = col * 2 + row;
 
@@ -340,20 +320,45 @@ Mixer_UI::Mixer_UI ()
 	}
 	_mixer_scene_vbox.pack_start(_mixer_scene_table, false, false);
 
-	rhs_pane1.add (favorite_plugins_frame);
-	rhs_pane1.add (track_display_frame);
+	_sidebar_notebook.signal_switch_page().connect ([this](GtkNotebookPage*, guint page) { update_sidebar_pagers (page); });
 
-	rhs_pane2.add (rhs_pane1);
-	rhs_pane2.add (group_display_frame);
+	_sidebar_pager1.set_name ("tab button");
+	_sidebar_pager2.set_name ("tab button");
 
-	list_vpacker.pack_start (rhs_pane2, true, true);
+	HBox* tabbox = manage (new HBox (true));
+	tabbox->set_spacing (3);
+	tabbox->pack_start (_sidebar_pager1);
+	tabbox->pack_start (_sidebar_pager2);
 
-	//add a spacer; this fills the area that is normally taken by the pane resizers
 	_mixer_scene_spacer.set_size_request (-1, 6);
-	list_vpacker.pack_start (_mixer_scene_spacer, false, false);
-
 	_mixer_scene_frame.add(_mixer_scene_vbox);
+	_mixer_scene_frame.set_label (_("Mixer Scenes (F1..F8 to recall)"));
+
+	list_vpacker.pack_start (*tabbox, false, false, 2);
+	list_vpacker.pack_start (_sidebar_notebook);
+	list_vpacker.pack_start (_mixer_scene_spacer, false, false);
 	list_vpacker.pack_start (_mixer_scene_frame, false, false);
+
+	_sidebar_notebook.set_show_tabs (false);
+	_sidebar_notebook.set_scrollable (true);
+	_sidebar_notebook.popup_disable ();
+
+	_sidebar_notebook.append_page (favorite_plugins_vbox, _("Plugins"));
+
+	_sidebar_pager1.add_item (_("Favorite"), _("Favorite Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_Favorite); update_sidebar_pagers (0); });
+	_sidebar_pager1.add_item (_("Recent"), _("Recently Used Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_Recent); update_sidebar_pagers (0); });
+	_sidebar_pager1.add_item (_("Top-10"), _("Top-10 Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_TopHits); update_sidebar_pagers (0); });
+	_sidebar_pager1.add_item (_("Search"), _("Search All Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_SearchAll); update_sidebar_pagers (0); });
+
+	_sidebar_pager2.add_item (_("Favorite"), _("Favorite Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_Favorite); update_sidebar_pagers (0); });
+	_sidebar_pager2.add_item (_("Recent"), _("Recently Used Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_Recent); update_sidebar_pagers (0); });
+	_sidebar_pager2.add_item (_("Top-10"), _("Top-10 Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_TopHits); update_sidebar_pagers (0); });
+	_sidebar_pager2.add_item (_("Search"), _("Search All Plugins"), [this]() {_sidebar_notebook.set_current_page (0); set_plugin_list_mode (PLM_SearchAll); update_sidebar_pagers (0); });
+
+	add_sidebar_page (_("Tracks"), _("Track & Bus Visibility"), track_display_scroller);
+	add_sidebar_page (_("Groups"), _("Track & Bus Groups"), group_display_vbox);
+
+	_sidebar_pager2.set_index (4);
 
 	vca_label_bar.set_size_request (-1, 16 + 1); /* must match height in GroupTabs::set_size_request()  + 1 border px*/
 	vca_vpacker.pack_start (vca_label_bar, false, false);
@@ -375,27 +380,22 @@ Mixer_UI::Mixer_UI ()
 	global_hpacker.pack_start (inner_pane, true, true);
 	global_hpacker.pack_start (out_packer, false, false);
 
-	list_hpane.set_check_divider_position (true);
-	list_hpane.add (list_vpacker);
-	list_hpane.add (global_hpacker);
-	list_hpane.set_child_minsize (list_vpacker, 30);
-
-	rhs_pane1.set_divider (0, .6);
-	rhs_pane2.set_divider (0, .7);
-	list_hpane.set_divider (0, .2);
 	inner_pane.set_divider (0, .8);
 
-	rhs_pane1.set_drag_cursor (*PublicEditor::instance().cursors()->expand_up_down);
-	rhs_pane2.set_drag_cursor (*PublicEditor::instance().cursors()->expand_up_down);
-	list_hpane.set_drag_cursor (*PublicEditor::instance().cursors()->expand_left_right);
 	inner_pane.set_drag_cursor (*PublicEditor::instance().cursors()->expand_left_right);
 
-	_content.pack_start (list_hpane, true, true);
+	content_app_bar.add (_application_bar);
+	content_main.add (global_hpacker);
+
+	if (!Profile->get_mixbus ()) {
+		content_att_left.add (list_vpacker);
+	} else {
+		content_att_right.add (list_vpacker);
+	}
 
 	update_title ();
 
-	_content.show ();
-	_content.set_name ("MixerWindow");
+	contents().set_name ("MixerWindow");
 
 	global_hpacker.show();
 	scroller.show();
@@ -407,10 +407,7 @@ Mixer_UI::Mixer_UI ()
 	group_display_scroller.show();
 	favorite_plugins_scroller.show();
 	group_display_vbox.show();
-	group_display_frame.show();
-	favorite_plugins_frame.show();
-	rhs_pane1.show();
-	rhs_pane2.show();
+	favorite_plugins_vbox.show_all();
 	strip_packer.show();
 	inner_pane.show();
 	vca_scroller.show();
@@ -420,7 +417,6 @@ Mixer_UI::Mixer_UI ()
 	vca_label.show();
 	vca_scroller_base.show();
 	out_packer.show();
-	list_hpane.show();
 	group_display.show();
 	favorite_plugins_display.show();
 
@@ -429,14 +425,14 @@ Mixer_UI::Mixer_UI ()
 		_monitor_section.tearoff().set_state (*mnode);
 	}
 
-	MixerStrip::CatchDeletion.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::remove_strip, this, _1), gui_context());
-	VCAMasterStrip::CatchDeletion.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::remove_master, this, _1), gui_context());
-	FoldbackStrip::CatchDeletion.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::remove_foldback, this, _1), gui_context());
-	SurroundStrip::CatchDeletion.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::remove_surround_master, this, _1), gui_context());
+	MixerStrip::CatchDeletion.connect (*this, invalidator (*this), std::bind (&Mixer_UI::remove_strip, this, _1), gui_context());
+	VCAMasterStrip::CatchDeletion.connect (*this, invalidator (*this), std::bind (&Mixer_UI::remove_master, this, _1), gui_context());
+	FoldbackStrip::CatchDeletion.connect (*this, invalidator (*this), std::bind (&Mixer_UI::remove_foldback, this, _1), gui_context());
+	SurroundStrip::CatchDeletion.connect (*this, invalidator (*this), std::bind (&Mixer_UI::remove_surround_master, this, _1), gui_context());
 
 	/* handle escape */
 
-	ARDOUR_UI::instance()->Escape.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::escape, this), gui_context());
+	ARDOUR_UI::instance()->Escape.connect (*this, invalidator (*this), std::bind (&Mixer_UI::escape, this), gui_context());
 
 #ifndef DEFER_PLUGIN_SELECTOR_LOAD
 	_plugin_selector = new PluginSelector (PluginManager::instance ());
@@ -444,11 +440,11 @@ Mixer_UI::Mixer_UI ()
 #error implement deferred Plugin-Favorite list
 #endif
 
-	PluginManager::instance ().PluginListChanged.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::refill_favorite_plugins, this), gui_context());
-	ARDOUR::Plugin::PresetsChanged.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::refill_favorite_plugins, this), gui_context());
+	PluginManager::instance ().PluginListChanged.connect (*this, invalidator (*this), std::bind (&Mixer_UI::refill_favorite_plugins, this), gui_context());
+	ARDOUR::Plugin::PresetsChanged.connect (*this, invalidator (*this), std::bind (&Mixer_UI::refill_favorite_plugins, this), gui_context());
 
-	PluginManager::instance ().PluginStatusChanged.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::maybe_refill_favorite_plugins, this, PLM_Favorite), gui_context());
-	PluginManager::instance ().PluginStatsChanged.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::maybe_refill_favorite_plugins, this, PLM_Recent), gui_context());
+	PluginManager::instance ().PluginStatusChanged.connect (*this, invalidator (*this), std::bind (&Mixer_UI::maybe_refill_favorite_plugins, this, PLM_Favorite), gui_context());
+	PluginManager::instance ().PluginStatsChanged.connect (*this, invalidator (*this), std::bind (&Mixer_UI::maybe_refill_favorite_plugins, this, PLM_Recent), gui_context());
 }
 
 Mixer_UI::~Mixer_UI ()
@@ -462,6 +458,14 @@ Mixer_UI::~Mixer_UI ()
 	delete track_menu;
 	delete _group_tabs;
 	delete _mixer_scene_release;
+}
+
+void
+Mixer_UI::add_sidebar_page (string const& label, string const& name, Gtk::Widget& widget)
+{
+	_sidebar_notebook.append_page (widget, name);
+	_sidebar_pager1.add_item (label, name, [this, &widget]() {_sidebar_notebook.set_current_page (_sidebar_notebook.page_num (widget)); });
+	_sidebar_pager2.add_item (label, name, [this, &widget]() {_sidebar_notebook.set_current_page (_sidebar_notebook.page_num (widget)); });
 }
 
 struct MixerStripSorter {
@@ -639,7 +643,7 @@ Mixer_UI::add_stripables (StripableList& slist)
 
 				if (route->is_monitor()) {
 
-					out_packer.pack_end (_monitor_section.tearoff(), false, false);
+					content_bus.add (_monitor_section.tearoff());
 					_monitor_section.set_session (_session);
 					_monitor_section.tearoff().show_all ();
 
@@ -652,7 +656,7 @@ Mixer_UI::add_stripables (StripableList& slist)
 						monitor_section_attached ();
 					}
 
-					route->DropReferences.connect (*this, invalidator(*this), boost::bind (&Mixer_UI::monitor_section_going_away, this), gui_context());
+					route->DropReferences.connect (*this, invalidator(*this), std::bind (&Mixer_UI::monitor_section_going_away, this), gui_context());
 
 					/* no regular strip shown for control out */
 
@@ -717,8 +721,8 @@ Mixer_UI::add_stripables (StripableList& slist)
 				strip->signal_button_release_event().connect (sigc::bind (sigc::mem_fun(*this, &Mixer_UI::strip_button_release_event), strip));
 			}
 
-			(*s)->presentation_info().PropertyChanged.connect (*this, invalidator(*this), boost::bind (&Mixer_UI::stripable_property_changed, this, _1, std::weak_ptr<Stripable>(*s)), gui_context());
-			(*s)->PropertyChanged.connect (*this, invalidator(*this), boost::bind (&Mixer_UI::stripable_property_changed, this, _1, std::weak_ptr<Stripable>(*s)), gui_context());
+			(*s)->presentation_info().PropertyChanged.connect (*this, invalidator(*this), std::bind (&Mixer_UI::stripable_property_changed, this, _1, std::weak_ptr<Stripable>(*s)), gui_context());
+			(*s)->PropertyChanged.connect (*this, invalidator(*this), std::bind (&Mixer_UI::stripable_property_changed, this, _1, std::weak_ptr<Stripable>(*s)), gui_context());
 		}
 
 	} catch (const std::exception& e) {
@@ -1026,7 +1030,7 @@ Mixer_UI::fan_out (std::weak_ptr<Route> wr, bool to_busses, bool group)
 		return;
 	}
 
-#define BUSNAME  pd.group_name + "(" + route->name () + ")"
+#define BUSNAME legalize_for_universal_path (pd.group_name + " (" + route->name () + ")")
 
 	/* count busses and channels/bus */
 	std::shared_ptr<Plugin> plugin = pi->plugin ();
@@ -1272,13 +1276,15 @@ void
 Mixer_UI::set_session (Session* sess)
 {
 	SessionHandlePtr::set_session (sess);
-	_monitor_section.set_session (sess);
 
-	if (_plugin_selector) {
-		_plugin_selector->set_session (_session);
+	if (sess) {
+		_monitor_section.set_session (sess);
+		_group_tabs->set_session (sess);
+		_application_bar.set_session (_session);
+		if (_plugin_selector) {
+			_plugin_selector->set_session (_session);
+		}
 	}
-
-	_group_tabs->set_session (sess);
 
 	update_scene_buttons();
 
@@ -1308,7 +1314,7 @@ Mixer_UI::set_session (Session* sess)
 
 #if 0
 	/* skip mapping all session-config vars, we only need one */
-	boost::function<void (string)> pc (boost::bind (&Mixer_UI::parameter_changed, this, _1));
+	std::function<void (string)> pc (std::bind (&Mixer_UI::parameter_changed, this, _1));
 	_session->config.map_parameters (pc);
 #else
 	parameter_changed ("show-group-tabs");
@@ -1316,21 +1322,21 @@ Mixer_UI::set_session (Session* sess)
 
 	initial_track_display ();
 
-	_session->RouteAdded.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::add_routes, this, _1), gui_context());
-	_session->route_group_added.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::add_route_group, this, _1), gui_context());
-	_session->route_group_removed.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::route_groups_changed, this), gui_context());
-	_session->route_groups_reordered.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::route_groups_changed, this), gui_context());
-	_session->config.ParameterChanged.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::parameter_changed, this, _1), gui_context());
-	_session->DirtyChanged.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::update_title, this), gui_context());
-	_session->StateSaved.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::update_title, this), gui_context());
-	_session->SurroundMasterAddedOrRemoved.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::sync_surround_action, this), gui_context());
+	_session->RouteAdded.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::add_routes, this, _1), gui_context());
+	_session->route_group_added.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::add_route_group, this, _1), gui_context());
+	_session->route_group_removed.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::route_groups_changed, this), gui_context());
+	_session->route_groups_reordered.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::route_groups_changed, this), gui_context());
+	_session->config.ParameterChanged.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::parameter_changed, this, _1), gui_context());
+	_session->DirtyChanged.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::update_title, this), gui_context());
+	_session->StateSaved.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::update_title, this), gui_context());
+	_session->SurroundMasterAddedOrRemoved.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::sync_surround_action, this), gui_context());
 
-	_session->vca_manager().VCAAdded.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::add_masters, this, _1), gui_context());
-	_session->vca_manager().VCACreated.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::new_masters_created, this), gui_context());
+	_session->vca_manager().VCAAdded.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::add_masters, this, _1), gui_context());
+	_session->vca_manager().VCACreated.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::new_masters_created, this), gui_context());
 
-	MixerScene::Change.connect (_session_connections, invalidator (*this), boost::bind (&Mixer_UI::update_scene_buttons, this), gui_context());
+	MixerScene::Change.connect (_session_connections, invalidator (*this), std::bind (&Mixer_UI::update_scene_buttons, this), gui_context());
 
-	Config->ParameterChanged.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::parameter_changed, this, _1), gui_context ());
+	Config->ParameterChanged.connect (*this, invalidator (*this), std::bind (&Mixer_UI::parameter_changed, this, _1), gui_context ());
 
 	route_groups_changed ();
 
@@ -1481,7 +1487,7 @@ Mixer_UI::stop_updating ()
 void
 Mixer_UI::fast_update_strips ()
 {
-	if (!UIConfiguration::instance().get_no_strobe() && _content.get_mapped () && _session) {
+	if (!UIConfiguration::instance().get_no_strobe() && contents().get_mapped () && _session) {
 		for (auto & s : strips) {
 			s->fast_update ();
 		}
@@ -1860,9 +1866,6 @@ Mixer_UI::redisplay_track_list ()
 
 	if (_surround_strip) {
 		out_packer.reorder_child (*_surround_strip, -1);
-	}
-	if (_monitor_section.tearoff ().get_parent ()) {
-		out_packer.reorder_child (_monitor_section.tearoff(), -1);
 	}
 }
 
@@ -2294,23 +2297,6 @@ Mixer_UI::route_group_property_changed (RouteGroup* group, const PropertyChange&
 }
 
 void
-Mixer_UI::toggle_mixer_list ()
-{
-	Glib::RefPtr<ToggleAction> act = ActionManager::get_toggle_action ("Mixer", "ToggleMixerList");
-	showhide_mixer_list (act->get_active());
-}
-
-void
-Mixer_UI::showhide_mixer_list (bool yn)
-{
-	if (yn) {
-		list_vpacker.show ();
-	} else {
-		list_vpacker.hide ();
-	}
-}
-
-void
 Mixer_UI::toggle_monitor_section ()
 {
 	Glib::RefPtr<ToggleAction> act = ActionManager::get_toggle_action ("Mixer", "ToggleMonitorSection");
@@ -2480,7 +2466,7 @@ Mixer_UI::add_route_group (RouteGroup* group)
 		focus = true;
 	}
 
-	group->PropertyChanged.connect (*this, invalidator (*this), boost::bind (&Mixer_UI::route_group_property_changed, this, group, _1), gui_context());
+	group->PropertyChanged.connect (*this, invalidator (*this), std::bind (&Mixer_UI::route_group_property_changed, this, group, _1), gui_context());
 
 	if (focus) {
 		TreeViewColumn* col = group_display.get_column (0);
@@ -2542,6 +2528,12 @@ Mixer_UI::set_strip_width (Width w, bool save)
 	for (list<MixerStrip*>::iterator i = strips.begin(); i != strips.end(); ++i) {
 		(*i)->set_width_enum (w, save ? (*i)->width_owner() : this);
 	}
+}
+
+void
+Mixer_UI::focus_on_clock()
+{
+	_application_bar.focus_on_clock();
 }
 
 int
@@ -2635,22 +2627,33 @@ Mixer_UI::set_state (const XMLNode& node, int version)
 		sync_treeview_from_favorite_order ();
 	}
 
+	guint index;
+	if (node.get_property (X_("mixer-sidebar-btn1"), index)) {
+		_sidebar_pager1.set_index (index);
+	}
+
+	if (node.get_property (X_("mixer-sidebar-btn2"), index)) {
+		_sidebar_pager2.set_index (index);
+	}
+
+	if (node.get_property (X_("mixer-sidebar-btn2"), index)) {
+		_sidebar_pager2.set_index (index);
+	}
+
+	if (node.get_property (X_("mixer-plugin-list"), index) && index <= PLM_SearchAll) {
+		plugin_list_mode = (PluginListMode)index;
+	}
+	set_plugin_list_mode(plugin_list_mode);
+
+	int32_t sidebar_page;
+	if (node.get_property (X_("mixer-sidebar-page"), sidebar_page)) {
+		_sidebar_notebook.set_current_page (sidebar_page);
+	} else {
+		sidebar_page = _sidebar_notebook.get_current_page ();
+	}
+	update_sidebar_pagers (sidebar_page);
+
 	float fract;
-	if (!node.get_property ("mixer-rhs-pane1-pos", fract) || fract > 1.0) {
-		fract = 0.6f;
-	}
-	rhs_pane1.set_divider (0, fract);
-
-	if (!node.get_property ("mixer-rhs-pane2-pos", fract) || fract > 1.0) {
-		fract = 0.7f;
-	}
-	rhs_pane2.set_divider (0, fract);
-
-	if (!node.get_property ("mixer-list-hpane-pos", fract) || fract > 1.0) {
-		fract = 0.2f;
-	}
-	list_hpane.set_divider (0, fract);
-
 	if (!node.get_property ("mixer-inner-pane-pos", fract) || fract > 1.0) {
 		fract = 0.8f;
 	}
@@ -2695,9 +2698,10 @@ Mixer_UI::get_state () const
 
 	node->add_child_nocopy (Tabbable::get_state());
 
-	node->set_property (X_("mixer-rhs-pane1-pos"), rhs_pane1.get_divider());
-	node->set_property (X_("mixer-rhs_pane2-pos"), rhs_pane2.get_divider());
-	node->set_property (X_("mixer-list-hpane-pos"), list_hpane.get_divider());
+	node->set_property (X_("mixer-sidebar-page"), _sidebar_notebook.get_current_page ());
+	node->set_property (X_("mixer-sidebar-btn1"), _sidebar_pager1.index ());
+	node->set_property (X_("mixer-sidebar-btn2"), _sidebar_pager2.index ());
+	node->set_property (X_("mixer-plugin-list"), (int)plugin_list_mode);
 	node->set_property (X_("mixer-inner-pane-pos"),  inner_pane.get_divider());
 
 	node->set_property ("narrow-strips", (_strip_width == Narrow));
@@ -2968,12 +2972,7 @@ Mixer_UI::setup_track_display ()
 	track_display_scroller.add (track_display);
 	track_display_scroller.set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
 
-	track_display_frame.set_name("BaseFrame");
-	track_display_frame.set_shadow_type (Gtk::SHADOW_IN);
-	track_display_frame.add (track_display_scroller);
-
 	track_display_scroller.show();
-	track_display_frame.show();
 	track_display.show();
 }
 
@@ -3022,7 +3021,7 @@ Mixer_UI::strip_by_x (int x)
 	for (list<MixerStrip*>::iterator i = strips.begin(); i != strips.end(); ++i) {
 		int x1, x2, y;
 
-		(*i)->translate_coordinates (_content, 0, 0, x1, y);
+		(*i)->translate_coordinates (contents(), 0, 0, x1, y);
 		x2 = x1 + (*i)->get_width();
 
 		if (x >= x1 && x <= x2) {
@@ -3070,7 +3069,7 @@ Mixer_UI::monitor_section_going_away ()
 	}
 
 	monitor_section_detached ();
-	out_packer.remove (_monitor_section.tearoff());
+	content_bus.remove ();
 }
 
 void
@@ -3167,16 +3166,37 @@ Mixer_UI::save_favorite_ui_state (const TreeModel::iterator& iter, const TreeMod
 }
 
 void
+Mixer_UI::update_sidebar_pagers (guint page)
+{
+	std::string label;
+	if (page == 0) {
+		switch (plugin_list_mode) {
+			case PLM_Favorite:
+				label = "Favorite Plugins";
+				break;
+			case PLM_Recent:
+				label = "Recent Plugins";
+				break;
+			case PLM_TopHits:
+				label = "Top-10 Plugins";
+				break;
+			case PLM_SearchAll:
+				label = "Search All Plugins";
+				break;
+		}
+	} else {
+		label = _sidebar_notebook.get_tab_label_text (*_sidebar_notebook.get_nth_page (page));
+	}
+	_sidebar_pager1.set_active (label);
+	_sidebar_pager2.set_active (label);
+}
+
+void
 Mixer_UI::set_plugin_list_mode (PluginListMode plm)
 {
 	plugin_list_mode = plm;
-	
-	string str = plugin_list_mode_strings[(int)plm];
-	if (str != favorite_plugins_mode_combo.get_text ()) {
-		favorite_plugins_mode_combo.set_text (str);
-	}
 
-	if (plugin_list_mode == PLM_Favorite) {
+	if (plugin_list_mode == PLM_Favorite || plugin_list_mode == PLM_SearchAll) {
 		PBD::Unwinder<bool> uw (ignore_plugin_refill, true);
 		favorite_plugins_search_hbox.show ();
 		plugin_search_entry.set_text ("");
@@ -3189,7 +3209,7 @@ Mixer_UI::set_plugin_list_mode (PluginListMode plm)
 void
 Mixer_UI::plugin_search_entry_changed ()
 {
-	if (plugin_list_mode == PLM_Favorite) {
+	if (plugin_list_mode == PLM_Favorite || plugin_list_mode == PLM_SearchAll) {
 		refill_favorite_plugins ();
 	}
 }
@@ -3219,6 +3239,18 @@ Mixer_UI::refiller (PluginInfoList& result, const PluginInfoList& plugs)
 
 			if (maybe_show && !searchstr.empty()) {
 				maybe_show = false;
+				/* check name */
+				std::string compstr = (*i)->name;
+				setup_search_string (compstr);
+				maybe_show |= match_search_strings (compstr, searchstr);
+				/* check tags */
+				std::string tags = manager.get_tags_as_string (*i);
+				setup_search_string (tags);
+				maybe_show |= match_search_strings (tags, searchstr);
+			}
+		} else if (plm == PLM_SearchAll) {
+			maybe_show = false;
+			if (searchstr.length() > 2) {
 				/* check name */
 				std::string compstr = (*i)->name;
 				setup_search_string (compstr);
@@ -3277,7 +3309,7 @@ Mixer_UI::refill_favorite_plugins ()
 
 	switch (plugin_list_mode) {
 		default:
-			/* use favorites as-is */
+			/* use favorites & search all as-is */
 			break;
 		case PLM_TopHits:
 			{
@@ -3349,6 +3381,7 @@ Mixer_UI::sync_treeview_from_favorite_order ()
 			}
 			break;
 		case PLM_TopHits:
+		case PLM_SearchAll:
 			{
 				PluginABCSorter cmp;
 				plugin_list.sort (cmp);
@@ -3612,7 +3645,6 @@ Mixer_UI::plugin_drag_motion (const Glib::RefPtr<Gdk::DragContext>& ctx, int x, 
 		}
 	} else if (target == "x-ardour/plugin.preset") {
 		ctx->drag_status (Gdk::ACTION_COPY, time);
-		//favorite_plugins_mode_combo.set_text (_("Favorite Plugins"));
 		return true;
 	}
 
@@ -3638,6 +3670,12 @@ Mixer_UI::plugin_drop (const Glib::RefPtr<Gdk::DragContext>&, const Gtk::Selecti
 
 	manager.set_status (ppp->_pip->type, ppp->_pip->unique_id, status);
 	manager.save_statuses ();
+
+	/* switch to favorite tab */
+	if (plugin_list_mode != PLM_Favorite) {
+		set_plugin_list_mode (PLM_Favorite);
+		update_sidebar_pagers (0);
+	}
 }
 
 void
@@ -3667,7 +3705,7 @@ Mixer_UI::show_spill (std::shared_ptr<Stripable> s)
 	show_spill_change (s); /* EMIT SIGNAL */
 
 	if (s) {
-		s->DropReferences.connect (_spill_gone_connection, invalidator (*this), boost::bind (&Mixer_UI::spill_nothing, this), gui_context());
+		s->DropReferences.connect (_spill_gone_connection, invalidator (*this), std::bind (&Mixer_UI::spill_nothing, this), gui_context());
 		_group_tabs->set_sensitive (false);
 	} else {
 		_group_tabs->set_sensitive (true);
@@ -3719,7 +3757,24 @@ Mixer_UI::register_actions ()
 	ActionManager::register_action (group, "toggle-midi-input-active", _("Toggle MIDI Input Active for Mixer-Selected Tracks/Busses"),
 	                           sigc::bind (sigc::mem_fun (*this, &Mixer_UI::toggle_midi_input_active), false));
 
-	ActionManager::register_toggle_action (group, X_("ToggleMixerList"), _("Mixer: Show Mixer List"), sigc::mem_fun (*this, &Mixer_UI::toggle_mixer_list));
+	/* attachments visibility (editor-mixer-strip, bottom properties, sidebar list) */
+
+	RefPtr<Action> act;
+	if (!Profile->get_mixbus ()) {
+		act = ActionManager::register_toggle_action (group, "ToggleMixerList", _("(Mixer) Show Sidebar List"), sigc::mem_fun (*this, &Tabbable::att_left_button_toggled));
+		left_attachment_button.set_related_action (act);
+		act = ActionManager::register_toggle_action (group, "ToggleMixerStrip", _("(Mixer) Show Sidebar Strip"), []{});
+	} else {
+		act = ActionManager::register_toggle_action (group, "ToggleMixerList", _("(Mixer) Show Sidebar List"), sigc::mem_fun (*this, &Tabbable::att_right_button_toggled));
+		right_attachment_button.set_related_action (act);
+		act = ActionManager::register_toggle_action (group, "ToggleMixerStrip", _("(Mixer) Show Sidebar Strip"), sigc::mem_fun (*this, &Tabbable::att_left_button_toggled));
+		left_attachment_button.set_related_action (act);
+	}
+
+#ifdef MIXBUS
+	act = ActionManager::register_toggle_action (group, "ToggleMixerProps", _("(Mixer) Show Properties Bottom"), sigc::mem_fun (*this, &Tabbable::att_bottom_button_toggled));
+	bottom_attachment_button.set_related_action (act);
+#endif
 
 	ActionManager::register_toggle_action (group, X_("ToggleVCAPane"), _("Mixer: Show VCAs"), sigc::mem_fun (*this, &Mixer_UI::toggle_vcas));
 
@@ -3774,7 +3829,7 @@ Mixer_UI::control_action (std::shared_ptr<T> (Stripable::*get_control)() const)
 
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		std::shared_ptr<Stripable> s = r->stripable();
 		if (s) {
 			ac = (s.get()->*get_control)();
@@ -3815,7 +3870,7 @@ Mixer_UI::selected_gaincontrols ()
 {
 	set_axis_targets_for_operation ();
 	ControllableSet rv;
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			std::shared_ptr<GainControl> ac (ms->route()->gain_control());
@@ -3856,7 +3911,7 @@ Mixer_UI::unity_gain_action ()
 {
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		std::shared_ptr<Stripable> s = r->stripable();
 		if (s) {
 			std::shared_ptr<AutomationControl> ac = s->gain_control();
@@ -3872,7 +3927,7 @@ Mixer_UI::copy_processors ()
 {
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->copy_processors ();
@@ -3884,7 +3939,7 @@ Mixer_UI::cut_processors ()
 {
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->cut_processors ();
@@ -3896,7 +3951,7 @@ Mixer_UI::paste_processors ()
 {
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->paste_processors ();
@@ -3908,7 +3963,7 @@ Mixer_UI::select_all_processors ()
 {
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->select_all_processors ();
@@ -3920,7 +3975,7 @@ Mixer_UI::toggle_processors ()
 {
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->toggle_processors ();
@@ -3932,7 +3987,7 @@ Mixer_UI::ab_plugins ()
 {
 	set_axis_targets_for_operation ();
 
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->ab_plugins ();
@@ -3944,7 +3999,7 @@ void
 Mixer_UI::vca_assign (std::shared_ptr<VCA> vca)
 {
 	set_axis_targets_for_operation ();
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->vca_assign (vca);
@@ -3956,7 +4011,7 @@ void
 Mixer_UI::vca_unassign (std::shared_ptr<VCA> vca)
 {
 	set_axis_targets_for_operation ();
-	BOOST_FOREACH(AxisView* r, _axis_targets) {
+	for (AxisView* r : _axis_targets) {
 		MixerStrip* ms = dynamic_cast<MixerStrip*> (r);
 		if (ms) {
 			ms->vca_unassign (vca);
@@ -4410,7 +4465,7 @@ Mixer_UI::toggle_surround_master ()
 	if (want_sm) {
 		_session->config.set_use_surround_master (true);
 	} else {
-		ArdourMessageDialog md (_("Disabling surround master will delete all existing surround panner state.\nThis cannot be undonoe. Proceed anyway?"), false, MESSAGE_QUESTION, BUTTONS_YES_NO);
+		ArdourMessageDialog md (_("Disabling surround master will delete all existing surround panner state.\nThis cannot be undone. Proceed anyway?"), false, MESSAGE_QUESTION, BUTTONS_YES_NO);
 		if (md.run () == RESPONSE_YES) {
 			_session->config.set_use_surround_master (false);
 		}

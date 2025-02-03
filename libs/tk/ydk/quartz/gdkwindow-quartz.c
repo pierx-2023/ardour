@@ -197,7 +197,10 @@ gdk_window_impl_quartz_finalize (GObject *object)
 {
   GdkWindowImplQuartz *impl = GDK_WINDOW_IMPL_QUARTZ (object);
 
-  check_grab_destroy (GDK_DRAWABLE_IMPL_QUARTZ (object)->wrapper);
+  GdkWindow *window = GDK_DRAWABLE_IMPL_QUARTZ (object)->wrapper;
+  GdkWindowObject *private = (GdkWindowObject*) window;
+
+  check_grab_destroy (window);
 
   if (impl->paint_clip_region)
     gdk_region_destroy (impl->paint_clip_region);
@@ -2386,14 +2389,23 @@ void
 gdk_window_set_modal_hint (GdkWindow *window,
 			   gboolean   modal)
 {
+  GdkWindowObject *private;
+  gboolean is_mapped;
+  
   if (GDK_WINDOW_DESTROYED (window) ||
       !WINDOW_IS_TOPLEVEL (window))
     return;
 
-  if (_gdk_modal_notify) {
-	  _gdk_modal_notify (window, modal);
+  private = (GdkWindowObject*) window;
+
+  if (_gdk_modal_notify &&  private->modal_hint != modal) {
+    gboolean is_mapped = GDK_WINDOW_IS_MAPPED (window);
+    if (is_mapped) {
+      _gdk_modal_notify (window, modal);
+    }
   }
-  /* FIXME: Implement */
+
+  private->modal_hint = modal;
 }
 
 void

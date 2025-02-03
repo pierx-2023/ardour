@@ -20,7 +20,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#include <gtkmm/dialog.h>
+#include <ytkmm/dialog.h>
 
 #include "pbd/enumwriter.h"
 
@@ -160,7 +160,7 @@ setup_gtk_ardour_enums ()
 	REGISTER_ENUM (SelectionItem);
 	REGISTER_ENUM (ControlPointItem);
 	REGISTER_ENUM (GainLineItem);
-	REGISTER_ENUM (AutomationLineItem);
+	REGISTER_ENUM (EditorAutomationLineItem);
 	REGISTER_ENUM (MeterMarkerItem);
 	REGISTER_ENUM (TempoCurveItem);
 	REGISTER_ENUM (TempoMarkerItem);
@@ -188,6 +188,9 @@ setup_gtk_ardour_enums ()
 	REGISTER_ENUM (BBTRulerItem);
 	REGISTER_ENUM (SamplesRulerItem);
 	REGISTER_ENUM (VelocityItem);
+	REGISTER_ENUM (VelocityBaseItem);
+	REGISTER_ENUM (ClipStartItem);
+	REGISTER_ENUM (ClipEndItem);
 	REGISTER (item_type);
 
 	REGISTER_ENUM(MouseObject);

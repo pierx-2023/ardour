@@ -77,7 +77,7 @@ using namespace PBD;
 
 namespace ARDOUR { class AudioEngine; }
 
-PBD::Signal3<void, std::string, Plugin*, bool> Plugin::PresetsChanged;
+PBD::Signal<void(std::string, Plugin*, bool)> Plugin::PresetsChanged;
 
 bool
 PluginInfo::needs_midi_input () const
@@ -100,7 +100,7 @@ Plugin::Plugin (AudioEngine& e, Session& s)
 	, _num (0)
 {
 	_pending_stop_events.ensure_buffers (DataType::MIDI, 1, 4096);
-	PresetsChanged.connect_same_thread(_preset_connection, boost::bind (&Plugin::invalidate_preset_cache, this, _1, _2, _3));
+	PresetsChanged.connect_same_thread(_preset_connection, std::bind (&Plugin::invalidate_preset_cache, this, _1, _2, _3));
 }
 
 Plugin::Plugin (const Plugin& other)
@@ -123,7 +123,7 @@ Plugin::Plugin (const Plugin& other)
 {
 	_pending_stop_events.ensure_buffers (DataType::MIDI, 1, 4096);
 
-	PresetsChanged.connect_same_thread(_preset_connection, boost::bind (&Plugin::invalidate_preset_cache, this, _1, _2, _3));
+	PresetsChanged.connect_same_thread(_preset_connection, std::bind (&Plugin::invalidate_preset_cache, this, _1, _2, _3));
 }
 
 Plugin::~Plugin ()
@@ -318,14 +318,7 @@ Plugin::input_streams () const
 }
 
 samplecnt_t
-Plugin::effective_tail () const
-{
-	/* consider adding a user-override per plugin; compare to HasLatency, Latent */
-	return max<samplecnt_t> (0, min<samplecnt_t> (plugin_tail (), Config->get_max_tail_samples ()));
-}
-
-samplecnt_t
-Plugin::plugin_tail () const
+Plugin::plugin_tailtime () const
 {
 	return _session.sample_rate () * Config->get_tail_duration_sec ();
 }

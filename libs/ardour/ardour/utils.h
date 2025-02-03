@@ -21,8 +21,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef __ardour_utils_h__
-#define __ardour_utils_h__
+#pragma once
 
 #ifdef WAF_BUILD
 #include "libardour-config.h"
@@ -31,8 +30,6 @@
 #include <iostream>
 #include <string>
 #include <cmath>
-
-#include "boost/shared_ptr.hpp"
 
 #if __APPLE__
 #include <CoreFoundation/CoreFoundation.h>
@@ -155,4 +152,3 @@ LIBARDOUR_API std::string CFStringRefToStdString(CFStringRef stringRef);
 
 } //namespave
 
-#endif /* __ardour_utils_h__ */
